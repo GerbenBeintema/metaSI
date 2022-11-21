@@ -1,6 +1,7 @@
 
 from metaSI.data.norms import Norm
 import torch
+from warnings import warn
 
 class Multi_step_result():
     def __init__(self, yfuture, y_dists, norm : Norm, **kwargs):
@@ -11,7 +12,6 @@ class Multi_step_result():
         assert isinstance(norm, Norm)
         self.norm = norm #not the fitted norm but the test norm!
         self.ny = None if yfuture.ndim==2 else (yfuture.shape[2] if yfuture.ndim==3 else yfuture.shape[2:])
-
     def get_dim(self, batch_average=True, time_average=True, output_average=True):
         dim = []
         if batch_average:
@@ -48,7 +48,22 @@ class Multi_step_result():
         dim = self.get_dim(batch_average, time_average, output_average=False)
         return torch.mean(logp, dim=dim).detach().numpy() #div ny? /self.ny_val + + 1.4189385332046727417803297364056176
         #I can also remove the entropy thing, but that is overkill. 
+    @property
+    def __len__(self):
+        '''The total number of samples i.e. Nb*Nt'''
+        return self.yfuture.shape[0]*self.yfuture.shape[1]
 
 class Multi_step_result_list(Multi_step_result):
-    def __init__(self, yfuture, y_dists, norm: Norm, **kwargs):
-        raise NotImplementedError
+    def __init__(self, lst):
+        self.lst = lst
+        for result in lst:
+            assert isinstance(lst, Multi_step_result)
+    def log_prob(self, batch_average=True, time_average=True, output_average=True):
+        warn('log_prob is still a work in progress for Multi_step_result_list', stacklevel=2)
+        return sum(ls.log_prob(batch_average, time_average, output_average)*len(ls) for ls in self.lst)/self.total_samples()
+    def __len__(self):
+        return len(self.lst)
+    def total_samples(self):
+        return sum(len(ls) for ls in self.lst)
+    
+
