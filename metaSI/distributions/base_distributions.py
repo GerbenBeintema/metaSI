@@ -77,3 +77,7 @@ class Multimodal_distrubutions(Distrubutions):
         
         wbroad_acc = np.add.accumulate(wbroad,axis=1)
         randnow = np.random.rand(wbroad.shape[0])
+        ids = np.array([np.digitize(r, w_acc) for r, w_acc in zip(randnow, wbroad_acc)]) #is done is a for loop, can be improved
+        arange = np.arange(samples.shape[0])
+        samples = samples[arange, ids] #samples*batch, event_shape
+        return samples.reshape(sample_shape + self.batch_shape + self.event_shape)
