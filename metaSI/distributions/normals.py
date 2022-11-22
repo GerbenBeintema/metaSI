@@ -3,9 +3,9 @@ from matplotlib import pyplot as plt
 import torch
 from torch import distributions
 
-from metaSI.distributions.base_distributions import Distrubutions, stack_distributions, Multimodal_distrubutions
+from metaSI.distributions.base_distributions import Distrubution, stack_distributions, Multimodal_distrubution
 
-class Multimodal_Normal(Multimodal_distrubutions):
+class Multimodal_Normal(Multimodal_distrubution):
     def __init__(self, loc, scale, weights):
         super(Multimodal_Normal, self).__init__(weights)
         assert loc.shape==scale.shape==weights.shape
@@ -16,10 +16,10 @@ class Multimodal_Normal(Multimodal_distrubutions):
     
     ### Transforms ###
     def __add__(self, other):
-        assert not isinstance(other, Distrubutions)
+        assert not isinstance(other, Distrubution)
         return Multimodal_Normal(loc=self.loc + other, scale=self.scale, weights=self.weights)
     def __mul__(self, other):
-        assert not isinstance(other, Distrubutions)
+        assert not isinstance(other, Distrubution)
         return Multimodal_Normal(loc=self.loc*other, scale=self.scale*other, weights=self.weights)
     def __getitem__(self, x): 
         x = (x,) if not isinstance(x, tuple) else x
@@ -45,7 +45,7 @@ class Multimodal_Normal(Multimodal_distrubutions):
         weights = torch.stack([l.weights for l in list_of_distributions], dim=dim)
         return Multimodal_Normal(loc, scale, weights)
 
-class Multimodal_MultivariateNormal(Multimodal_distrubutions):
+class Multimodal_MultivariateNormal(Multimodal_distrubution):
     def __init__(self, loc, scale_tril, weights):
         super(Multimodal_MultivariateNormal, self).__init__(weights)
         #loc.shape = Batch_shape + (n_weights,) + (event_shape[0],)
@@ -57,11 +57,11 @@ class Multimodal_MultivariateNormal(Multimodal_distrubutions):
         
     ### Transforms ###
     def __add__(self, other):
-        assert not isinstance(other, Distrubutions)
+        assert not isinstance(other, Distrubution)
         other = torch.as_tensor(other,dtype=self.loc.dtype)
         return Multimodal_MultivariateNormal(loc=self.loc + other, scale_tril=self.scale_tril, weights=self.weights)
     def __mul__(self, other):
-        assert not isinstance(other, Distrubutions)
+        assert not isinstance(other, Distrubution)
         #other has shape = ..., ny
         other = other.numpy() if isinstance(other, torch.Tensor) else np.array(other)
         other = np.apply_along_axis(np.diag, -1, other)

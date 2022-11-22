@@ -1,15 +1,19 @@
-import torch
-import numpy as np
-from torch import nn
-from copy import deepcopy
-from tqdm.auto import tqdm
-from secrets import token_urlsafe
+
+
 import os
+from copy import deepcopy
+from secrets import token_urlsafe
+
+import numpy as np
+import torch
+from torch import nn
+from tqdm.auto import tqdm
+
 
 class nnModule_with_fit(nn.Module):
     def fit(self, train, val, iterations=10_000, batch_size=256, loss_kwargs={}, \
             print_freq=100, loss_kwargs_val=None, call_back_validation=None, val_freq=None, optimizer=None,\
-            save_freq=None, save_file=None):
+            save_freq=None, save_filename=None):
         '''The main fitting function        
         '''
         loss_kwargs_val = (loss_kwargs if loss_kwargs_val is None else loss_kwargs_val)
@@ -26,13 +30,13 @@ class nnModule_with_fit(nn.Module):
         else:
             print('Restarting training!!!, this might result in weird behaviour')
             iteration_counter_offset = self.iteration_monitor[-1]
-        lowest_train_loss, loss_train_acc, _ = float('inf'), 0, self.checkpoint_save('lowest_train_loss')
-        lowest_val_loss, loss_val, _ = float('inf'), float('inf'), self.checkpoint_save('lowest_val_loss')
+        lowest_train_loss_seen, loss_train_acc, _ = float('inf'), 0, self.checkpoint_save('lowest_train_loss')
+        lowest_val_loss_seen, loss_val, _ = float('inf'), float('inf'), self.checkpoint_save('lowest_val_loss')
         val_freq  = print_freq if val_freq==None  else val_freq
         save_freq = print_freq if save_freq==None else save_freq
-        if save_file is None and save_freq!=False:
+        if save_filename is None and save_freq!=False:
             code = token_urlsafe(4).replace('_','0').replace('-','a')
-            save_file = os.path.join(get_checkpoint_dir(), f'{self.__class__.__name__}-{code}.pth')
+            save_filename = os.path.join(get_checkpoint_dir(), f'{self.__class__.__name__}-{code}.pth')
     
         data_iter = enumerate(tqdm(Dataloader_iterations(train_data, batch_size=batch_size, iterations=iterations), initial=1),start=1)
         try:
@@ -47,23 +51,23 @@ class nnModule_with_fit(nn.Module):
                 if iteration%val_freq==0:
                     loss_val = self.loss(*val_data, **loss_kwargs_val).item() if \
                         call_back_validation is None else call_back_validation(locals(), globals())
-                    if loss_val<lowest_val_loss:
-                        lowest_val_loss = loss_val
+                    if loss_val<lowest_val_loss_seen:
+                        lowest_val_loss_seen = loss_val
                         self.checkpoint_save('lowest_val_loss')
                 if iteration%print_freq==0:
                     loss_train = loss_train_acc/print_freq
-                    m = '!' if loss_train<lowest_train_loss else ' '
-                    M = '!' if len(self.loss_val_monitor)==0 or np.min(self.loss_val_monitor)>lowest_val_loss else ' '
+                    m = '!' if loss_train<lowest_train_loss_seen else ' '
+                    M = '!' if len(self.loss_val_monitor)==0 or np.min(self.loss_val_monitor)>lowest_val_loss_seen else ' '
                     print(f'it {iteration:7,} loss {loss_train:.3f}{m} loss val {loss_val:.3f}{M}')
                     self.loss_train_monitor.append(loss_train)
                     self.loss_val_monitor.append(loss_val)
                     self.iteration_monitor.append(iteration+iteration_counter_offset)
-                    if loss_train<lowest_train_loss:
-                        lowest_train_loss = loss_train
+                    if loss_train<lowest_train_loss_seen:
+                        lowest_train_loss_seen = loss_train
                         self.checkpoint_save('lowest_train_loss')
                     loss_train_acc = 0
                 if save_freq!=False and (iteration%save_freq==0):
-                    self.save_to_file(save_file)
+                    self.save_to_file(save_filename)
 
                 
         except KeyboardInterrupt:
@@ -72,7 +76,7 @@ class nnModule_with_fit(nn.Module):
         self.checkpoint_save('last')
         self.checkpoint_load('lowest_val_loss') #Should this also save the monitors?
         if save_freq!=False:
-            self.save_to_file(save_file)
+            self.save_to_file(save_filename)
     
     def checkpoint_save(self,name): #checkpoints do not use files
         if not hasattr(self, 'checkpoints'):

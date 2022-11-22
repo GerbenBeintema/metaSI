@@ -4,9 +4,9 @@ import numpy as np
 import torch
 
 
-from metaSI.distributions.base_distributions import Distrubutions, Multimodal_distrubutions
+from metaSI.distributions.base_distributions import Distrubution, Multimodal_distrubution
 
-class Angle_pdf(Distrubutions):
+class Angle_pdf(Distrubution):
     def __init__(self, c=None, deltath=None):
         self.c = torch.abs(c)
         self.deltath = (deltath+torch.pi*(c<0)+torch.pi)%(2*torch.pi)-torch.pi
@@ -35,7 +35,7 @@ class Angle_pdf(Distrubutions):
         pdf_normal = distributions.normal.Normal(self.deltath+torch.pi*(self.c<0), 1/torch.abs(self.c)**0.5)
         return (pdf_normal.sample(sample_shape)+torch.pi)%(2*torch.pi) - torch.pi
         
-class Multimodal_Angle_pdf(Multimodal_distrubutions):
+class Multimodal_Angle_pdf(Multimodal_distrubution):
     def __init__(self, c, deltath, weights): #add a, b options
         super(Multimodal_Angle_pdf, self).__init__(weights)
         assert c.shape==deltath.shape==weights.shape

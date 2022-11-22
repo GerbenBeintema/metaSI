@@ -3,9 +3,9 @@ from matplotlib import pyplot as plt
 import torch
 from torch import distributions
 
-class Distrubutions():
+class Distrubution:
     def __truediv__(self, other):
-        assert not isinstance(other, Distrubutions)
+        assert not isinstance(other, Distrubution)
         return self*(1/other)
     def __rtruediv__(self, other):
         assert False
@@ -29,6 +29,12 @@ class Distrubutions():
         return self.dist.sample(sample_shape)
     def stack(self, list_of_distributions, dim=0):
         raise NotImplementedError('nope, stack should be implemented in subclass')
+    def __repr__(self) -> str:
+        try:
+            return f'{str(self.__class__).split(".")[-1][:-2]} of batch_shape={self.batch_shape} event_shape={self.event_shape}'
+        except:
+            return super().__repr__()
+    
 
 def stack_distributions(list_of_distributions, dim=0):
     assert len(list_of_distributions)>0
@@ -36,7 +42,7 @@ def stack_distributions(list_of_distributions, dim=0):
     return l.stack(list_of_distributions, dim=dim)
 
 
-class Multimodal_distrubutions(Distrubutions):
+class Multimodal_distrubution(Distrubution):
     def __init__(self, weights): #also other parameters?
         if not torch.allclose(torch.sum(weights,dim=-1), torch.tensor(1.)):
             # wsum = torch.sum(weights,dim=-1)
@@ -48,7 +54,7 @@ class Multimodal_distrubutions(Distrubutions):
 
     def log_prob_per_weighted(self, other):
         s = (...,None) + (slice(None,None,None),)*len(self.event_shape)
-        log_probs = super(Multimodal_distrubutions, self).log_prob(other[s]) # (Nb, Nw) #add the weights dimention
+        log_probs = super(Multimodal_distrubution, self).log_prob(other[s]) # (Nb, Nw) #add the weights dimention
         return torch.log(self.weights) + log_probs #(Nb, n_weights)
     def log_prob(self, other):
         Z = self.log_prob_per_weighted(other)
@@ -66,6 +72,8 @@ class Multimodal_distrubutions(Distrubutions):
     @property
     def n_weights(self):
         return self.dist.batch_shape[-1]
+    def __repr__(self) -> str:
+        return f'{str(self.__class__).split(".")[-1][:-2]} of batch_shape={self.batch_shape} event_shape={self.event_shape} n_weights={self.n_weights}'
     
     def sample(self, sample_shape=(), use_vectorize=False):
         sample_shape = (sample_shape,) if isinstance(sample_shape,int) else sample_shape

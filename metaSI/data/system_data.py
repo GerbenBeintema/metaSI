@@ -29,7 +29,7 @@ class System_data():
                 assert self.x.shape[0]==self.u.shape[0]
     
     def __len__(self):
-        '''Number of samples len(system_data) = self.N_samples'''
+        '''Number of samples len(system_data)'''
         if self.u is not None:
             return len(self.u)
         elif self.y is not None:
@@ -44,7 +44,7 @@ class System_data():
     def nx(self):
         return to_n_shape(self.x)
     def __repr__(self):
-        return f'System_data of length: {len(self.N_samples)} nu={self.nu} ny={self.ny} normed={self.normed} dt={self.dt}'
+        return f'System_data of length: {len(self)} nu={self.nu} ny={self.ny} normed={self.normed} dt={self.dt}'
     def plot(self,show=False):
         '''Very simple plotting function'''
         from matplotlib import pyplot as plt
@@ -209,7 +209,7 @@ class System_data_list(System_data):
         if len(self)==0:
             return f'System_data_list with {len(self.sdl)} series'
         else:
-            return f'System_data_list with {len(self.sdl)} series and total length {self.N_samples}, nu={self.nu}, ny={self.ny}, normed={self.normed} lengths={[sd.N_samples for sd in self.sdl]} dt={self.sdl[0].dt}'
+            return f'System_data_list with {len(self.sdl)} series and total length {self.N_samples}, nu={self.nu}, ny={self.ny}, normed={self.normed} lengths={[len(sd) for sd in self.sdl]} dt={self.sdl[0].dt}'
 
     def to_past_future_data_format(self, na=10, nb=10, nf=5, na_right = 0, nb_right = 0, \
         stride=1, force_multi_u=False, force_multi_y=False):

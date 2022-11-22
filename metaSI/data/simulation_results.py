@@ -3,7 +3,7 @@ from metaSI.data.norms import Norm
 import torch
 from warnings import warn
 
-class Multi_step_result():
+class Multi_step_result:
     def __init__(self, yfuture, y_dists, norm : Norm, **kwargs):
         #shape = [Nb, Nt, ny] and such
         self.kwargs = kwargs
@@ -52,12 +52,14 @@ class Multi_step_result():
     def __len__(self):
         '''The total number of samples i.e. Nb*Nt'''
         return self.yfuture.shape[0]*self.yfuture.shape[1]
+    def __repr__(self) -> str:
+        return f'Multi_step_result of batch_size={self.yfuture.shape[0]} time_size={self.yfuture.shape[1]} output_size={self.ny}'
 
 class Multi_step_result_list(Multi_step_result):
     def __init__(self, lst):
         self.lst = lst
         for result in lst:
-            assert isinstance(lst, Multi_step_result)
+            assert isinstance(result, Multi_step_result)
     def log_prob(self, batch_average=True, time_average=True, output_average=True):
         warn('log_prob is still a work in progress for Multi_step_result_list', stacklevel=2)
         return sum(ls.log_prob(batch_average, time_average, output_average)*len(ls) for ls in self.lst)/self.total_samples()

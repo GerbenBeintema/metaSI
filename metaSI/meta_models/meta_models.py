@@ -10,6 +10,7 @@ from metaSI.distributions.base_distributions import stack_distributions
 import random   
 from metaSI.data.simulation_results import Multi_step_result
 from torch import nn
+from metaSI.data.system_data import System_data, System_data_list
 
 
 class Meta_SS_model(nnModule_with_fit):
@@ -28,8 +29,12 @@ class Meta_SS_model(nnModule_with_fit):
         self.meta_state_to_output_dist = meta_state_to_output_dist_net(nz, ny, norm=Norm(), \
                                   **meta_state_to_output_dist_kwargs) #no norm here?
 
-    def make_training_data(self, uy, nf=50, parameter_init=True, **kwargs):
-        u,y = uy
+    def make_training_data(self, uy, nf=50, parameter_init=False, **kwargs):
+        assert not isinstance(uy, System_data_list), 'not yet implemented'
+        if isinstance(uy, (System_data)):
+            u,y = uy.u, uy.y
+        else:
+            u,y = uy
         u = self.norm.input_transform(u)
         y = self.norm.output_transform(y)
         U, Y = [], []
@@ -59,15 +64,19 @@ class Meta_SS_model(nnModule_with_fit):
         ydist_preds = self.simulate(u, y, init_z)
         return torch.mean(-ydist_preds[:,burn_time:].log_prob(y[:,burn_time:]))/self.ny_val + - 1.4189385332046727417803297364056176
 
-    def multi_step(self, uydata, nf=100):
-        nf = len(uydata[0]) if nf=='sim' else nf
-        ufuture, yfuture, init_z = self.make_training_data(uydata, nf=nf)
+    def multi_step(self, system_data, nf=100):
+        if isinstance(system_data, System_data_list):
+            return Multi_step_result([system_data_i for system_data_i in system_data])
+        assert isinstance(system_data, System_data)
+        if nf=='sim':
+            nf = len(system_data)
+        ufuture, yfuture, init_z = self.make_training_data(system_data, nf=nf)
         with torch.no_grad():
             y_dists, zfuture = self.simulate(ufuture, yfuture, init_z, return_z=True)
         I = self.norm.input_inverse_transform
         O = self.norm.output_inverse_transform
-        test_norm = Norm(uydata[0], uydata[1])
-        return Multi_step_result(O(yfuture), O(y_dists), test_norm, data=uydata, ufuture=I(ufuture), zfuture=zfuture)
+        test_norm = Norm(system_data.u, system_data.y)
+        return Multi_step_result(O(yfuture), O(y_dists), test_norm, data=system_data, ufuture=I(ufuture), zfuture=zfuture)
 
 class Meta_SS_model_encoder(Meta_SS_model):
     def __init__(self, nu: int, ny: int, norm: Norm = Norm(), nz: int=5, na: int=6, nb: int=6,\

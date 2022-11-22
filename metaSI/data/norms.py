@@ -30,8 +30,10 @@ class Norm:
         return y*self.ystd + self.ymean #(y-self.ymean)/self.ystd
     def input_inverse_transform(self, u): #un-normlized -> normalized
         return u*self.ustd + self.umean #(u-self.umean)/self.ustd
+    def __repr__(self):
+        return f'System_data_norm: (uumeean={self.umean}, ustd={self.ustd}, ymean={self.ymean}, ystd={self.ystd})'
 
-def get_nuy_and_auto_norm(u, y):
+def get_nu_ny_and_auto_norm(u, y):
     nu = None if u.ndim==1 else u.shape[1]
     ny = None if y.ndim==1 else y.shape[1]
     norm = Norm(u, y)
