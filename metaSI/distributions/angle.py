@@ -26,8 +26,8 @@ class Angle_pdf(Distrubution):
 #         2*torch.pi*torch.special.i0e(c)
         return self.c*torch.cos(th-self.deltath) - np.log(2*np.pi) - torch.log(torch.special.i0e(self.c)) - abs(self.c)
     def stack(self, list_of_distributions, dim=0):
-        c = torch.stack([l.c for l in list], dim=dim)
-        deltath = torch.stack([l.deltath for l in list], dim=dim)
+        c = torch.stack([l.c for l in list_of_distributions], dim=dim)
+        deltath = torch.stack([l.deltath for l in list_of_distributions], dim=dim)
         return Angle_pdf(c, deltath)
 
     def sample(self, sample_shape): #this is not trivial

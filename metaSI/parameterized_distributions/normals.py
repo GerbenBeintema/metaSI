@@ -70,13 +70,13 @@ class Par_multimodal_normal(nnModule_with_fit):
         dist = self.get_dist_normed(z)
         return torch.mean(- dist.log_prob(y))/self.ny_val + - 1.4189385332046727417803297364056176 #times ny_val?
 
-    def make_training_data(self, zy):
+    def make_training_arrays(self, zy):
         z,y = zy
         ynorm = self.norm.output_transform(y) #(y-self.y0)/self.ystd
         znorm = self.norm.input_transform(z) #(z-self.z0)/self.zstd
         return [torch.as_tensor(di, dtype=torch.float32) for di in [znorm, ynorm]]
 
-if __name__=='__main__' and False:
+if __name__=='__main__' and True:
     from matplotlib import pyplot as plt
     def sample():
         if np.random.rand()>0.3:
@@ -98,8 +98,9 @@ if __name__=='__main__' and False:
     weight_net_kwargs = {'bias_scale':2.0}
     loc_net_kwargs = {'bias_scale':0.75}
     logscale_net_kwargs = {'bias_scale':0.75}
+    from metaSI.data.norms import get_nu_ny_and_auto_norm
 
-    model = Par_normal_multimodal(*get_nuy_and_auto_norm(*train),n_weights=n_weights,\
+    model = Par_multimodal_normal(*get_nu_ny_and_auto_norm(*train),n_weights=n_weights,\
         weight_net_kwargs=weight_net_kwargs, loc_net_kwargs=loc_net_kwargs, logscale_net_kwargs=logscale_net_kwargs)
     print('std before weight_net',torch.std(model.weight_net.net_lin.bias))
     print('std before loc_net',torch.std(model.loc_net.net_lin.bias))
@@ -165,7 +166,7 @@ if __name__=='__main__' and False:
     logscale_net_kwargs = {'bias_scale':0.75}
     logscale_od_net = MLP_res_net #None for 
 
-    model = Par_normal_multimodal(*get_nuy_and_auto_norm(*train),n_weights=n_weights,\
+    model = Par_multimodal_normal(*get_nuy_and_auto_norm(*train),n_weights=n_weights,\
             weight_net_kwargs=weight_net_kwargs, \
             loc_net_kwargs=loc_net_kwargs, \
             logscale_net_kwargs=logscale_net_kwargs, \
@@ -221,7 +222,7 @@ if __name__=='__main__' and False:
     from matplotlib import pyplot as plt
 
     n_weights = 20
-    model = Par_normal_multimodal(*get_nuy_and_auto_norm(*train), n_weights=n_weights)
+    model = Par_multimodal_normal(*get_nuy_and_auto_norm(*train), n_weights=n_weights)
 
     import pickle
     load, name = True, 'models/toy-example-depedent-static-dist-model-3'

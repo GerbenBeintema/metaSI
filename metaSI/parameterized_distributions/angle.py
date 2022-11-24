@@ -4,7 +4,7 @@ from metaSI.utils.networks import MLP_res_net
 import torch
 from metaSI.distributions.angle import Multimodal_Angle_pdf
 
-class Dependent_dist_angle_pdf(nnModule_with_fit):
+class Par_multimodal_angle_pdf(nnModule_with_fit):
     ## form a p_theta(th|z) = Multimodal_Angle_pdf(th | c(z), th(z), weights(z))
     ## 
     ##
@@ -12,7 +12,7 @@ class Dependent_dist_angle_pdf(nnModule_with_fit):
                 weight_net=MLP_res_net, weight_net_kwargs={}, 
                 deltath_net=MLP_res_net, deltath_net_kwargs={}, 
                 c_net=MLP_res_net, c_net_kwargs={}):
-        super(Dependent_dist_angle_pdf, self).__init__()
+        super(Par_multimodal_angle_pdf, self).__init__()
         self.norm = norm
         assert self.norm.ymean==0 and self.norm.ystd==1
         
@@ -42,14 +42,14 @@ class Dependent_dist_angle_pdf(nnModule_with_fit):
         w = w/torch.sum(w,dim=-1)[...,None]
         
         deltath = self.deltath_net(z)*torch.pi #output is (Nb, n_weights)
-        c = torch.exp(self.c_net(z)) #output is (Nb, n_weights)
+        c = torch.exp(self.c_net(z)+3) #output is (Nb, n_weights)
         return Multimodal_Angle_pdf(c, deltath, weights=w)
     
     def loss(self, z, y):
         dist = self.get_dist_normed(z)
         return torch.mean(- dist.log_prob(y))/self.nth_val + - 1.4189385332046727417803297364056176 #times ny_val?
 
-    def make_training_data(self, zy):
+    def make_training_arrays(self, zy):
         z,y = zy
         ynorm = self.norm.output_transform(y) #(y-self.y0)/self.ystd
         znorm = self.norm.input_transform(z) #(z-self.z0)/self.zstd

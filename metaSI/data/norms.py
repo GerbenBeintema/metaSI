@@ -1,5 +1,5 @@
 import numpy as np
-
+from metaSI.data.system_data import System_data, System_data_list
 
 class Norm:
     def __init__(self, u=None, y=None, umean=0., ustd=1., ymean=0., ystd=1.):
@@ -22,14 +22,30 @@ class Norm:
     def fit(self, u, y):
         self.input_norm_fit(u)
         self.output_norm_fit(y)
+
+    #to normalized
     def output_transform(self, y): #un-normlized -> normalized
         return (y-self.ymean)/self.ystd
     def input_transform(self, u): #un-normlized -> normalized
         return (u-self.umean)/self.ustd
+    def transform(self, system_data):
+        assert isinstance(system_data, (System_data, System_data_list)) and system_data.normed==False
+        if isinstance(system_data, System_data_list):
+            return System_data_list([self.transform(sd) for sd in system_data.sdl])
+        u, y = system_data.u, system_data.y
+        return System_data(self.input_transform(u), self.output_transform(y), x=system_data.x, normed=True, dt=system_data.dt)
+    
+    #back normalization
     def output_inverse_transform(self, y): #un-normlized -> normalized
         return y*self.ystd + self.ymean #(y-self.ymean)/self.ystd
     def input_inverse_transform(self, u): #un-normlized -> normalized
         return u*self.ustd + self.umean #(u-self.umean)/self.ustd
+    def inverse_transform(self, system_data):
+        assert isinstance(system_data, (System_data, System_data_list)) and system_data.normed==True
+        if isinstance(system_data, System_data_list):
+            return System_data_list([self.inverse_transform(sd) for sd in system_data.sdl])
+        u, y = system_data.u, system_data.y
+        return System_data(self.input_inverse_transform(u), self.output_inverse_transform(y), x=system_data.x, normed=False, dt=system_data.dt)
     def __repr__(self):
         return f'System_data_norm: (uumeean={self.umean}, ustd={self.ustd}, ymean={self.ymean}, ystd={self.ystd})'
 

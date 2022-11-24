@@ -18,10 +18,13 @@ class nnModule_with_fit(nn.Module):
         '''
         loss_kwargs_val = (loss_kwargs if loss_kwargs_val is None else loss_kwargs_val)
         if call_back_validation is None:
-            val_data = self.make_training_data(val, **loss_kwargs_val)
-        train_data = self.make_training_data(train, **loss_kwargs)
+            val_data = self.make_training_arrays(val, **loss_kwargs_val)
+        train_data = self.make_training_arrays(train, **loss_kwargs)
         print('Number of datapoints:', len(train_data[0]), '\tBatch size: ', batch_size, '\tIterations per epoch:', len(train_data[0])//batch_size)
-        optimizer = torch.optim.Adam(self.parameters()) if optimizer is None else optimizer #optimizer is not a part of the Module
+        if optimizer is not None:
+            self.optimizer = optimizer
+        elif not hasattr(self,'optimizer'):
+            self.optimizer = torch.optim.Adam(self.parameters())
 
         #monitoring and checkpoints
         if not hasattr(self, 'loss_train_monitor'):
@@ -29,7 +32,7 @@ class nnModule_with_fit(nn.Module):
             iteration_counter_offset = 0
         else:
             print('Restarting training!!!, this might result in weird behaviour')
-            iteration_counter_offset = self.iteration_monitor[-1]
+            iteration_counter_offset = self.iteration_monitor[-1] if len(self.iteration_monitor)>0 else 0
         lowest_train_loss_seen, loss_train_acc, _ = float('inf'), 0, self.checkpoint_save('lowest_train_loss')
         lowest_val_loss_seen, loss_val, _ = float('inf'), float('inf'), self.checkpoint_save('lowest_val_loss')
         val_freq  = print_freq if val_freq==None  else val_freq
@@ -42,19 +45,18 @@ class nnModule_with_fit(nn.Module):
         try:
             for iteration, batch in data_iter:
                 loss = self.loss(*batch,**loss_kwargs)
-                optimizer.zero_grad()
+                self.optimizer.zero_grad()
                 loss.backward()
-                optimizer.step()
+                self.optimizer.step()
                 loss_train_acc += loss.item()
                 
-                # Saving and printing
-                if iteration%val_freq==0:
+                if iteration%val_freq==0:  #Validation
                     loss_val = self.loss(*val_data, **loss_kwargs_val).item() if \
                         call_back_validation is None else call_back_validation(locals(), globals())
                     if loss_val<lowest_val_loss_seen:
                         lowest_val_loss_seen = loss_val
                         self.checkpoint_save('lowest_val_loss')
-                if iteration%print_freq==0:
+                if iteration%print_freq==0: #Printing and monitor update
                     loss_train = loss_train_acc/print_freq
                     m = '!' if loss_train<lowest_train_loss_seen else ' '
                     M = '!' if len(self.loss_val_monitor)==0 or np.min(self.loss_val_monitor)>lowest_val_loss_seen else ' '
@@ -66,10 +68,8 @@ class nnModule_with_fit(nn.Module):
                         lowest_train_loss_seen = loss_train
                         self.checkpoint_save('lowest_train_loss')
                     loss_train_acc = 0
-                if save_freq!=False and (iteration%save_freq==0):
+                if save_freq!=False and (iteration%save_freq==0): #Saving
                     self.save_to_file(save_filename)
-
-                
         except KeyboardInterrupt:
             print('stopping early, ', end='')
         print('Saving parameters to checkpoint self.checkpoints["last"] and loading self.checkpoints["lowest_val_loss"]')
@@ -81,11 +81,10 @@ class nnModule_with_fit(nn.Module):
     def checkpoint_save(self,name): #checkpoints do not use files
         if not hasattr(self, 'checkpoints'):
             self.checkpoints = {}
-        self.checkpoints[name] = deepcopy(self.state_dict())
-
+        self.checkpoints[name] = {'state_dict':deepcopy(self.state_dict()),'optimizer_state_dict':deepcopy(self.optimizer.state_dict())}
     def checkpoint_load(self, name):
-        self.load_state_dict(self.checkpoints[name])
-    
+        self.load_state_dict(self.checkpoints[name]['state_dict'])
+        self.optimizer.load_state_dict(self.checkpoints[name]['optimizer_state_dict'])
     def save_to_file(self, file):
         torch.save(self, file)
 
