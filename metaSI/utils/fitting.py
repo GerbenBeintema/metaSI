@@ -17,8 +17,7 @@ class nnModule_with_fit(nn.Module):
         '''The main fitting function        
         '''
         loss_kwargs_val = (loss_kwargs if loss_kwargs_val is None else loss_kwargs_val)
-        if call_back_validation is None:
-            val_data = self.make_training_arrays(val, **loss_kwargs_val)
+        val_data = self.make_training_arrays(val, **loss_kwargs_val)
         train_data = self.make_training_arrays(train, **loss_kwargs)
         print('Number of datapoints:', len(train_data[0]), '\tBatch size: ', batch_size, '\tIterations per epoch:', len(train_data[0])//batch_size)
         if optimizer is not None:
@@ -53,6 +52,7 @@ class nnModule_with_fit(nn.Module):
                 if iteration%val_freq==0:  #Validation
                     loss_val = self.loss(*val_data, **loss_kwargs_val).item() if \
                         call_back_validation is None else call_back_validation(locals(), globals())
+                    
                     if loss_val<lowest_val_loss_seen:
                         lowest_val_loss_seen = loss_val
                         self.checkpoint_save('lowest_val_loss')

@@ -108,9 +108,9 @@ class Meta_SS_model_encoder(Meta_SS_model):
         Nb = upast.shape[0]
         init_z = self.past_to_meta_state(torch.cat([upast.view(Nb,-1), ypast.view(Nb,-1)],dim=1))
         return super().simulate(ufuture, yfuture, init_z, return_z=return_z)
-    def loss(self, upast, ypast, ufuture, yfuture, **kwargs):
+    def loss(self, upast, ypast, ufuture, yfuture, burn_time=0, **kwargs):
         ydist_preds = self.simulate(upast, ypast, ufuture, yfuture)
-        return torch.mean(-ydist_preds.log_prob(yfuture))/self.ny_val + - 1.4189385332046727417803297364056176
+        return torch.mean(-ydist_preds[:,burn_time:].log_prob(yfuture[:,burn_time:]))/self.ny_val + - 1.4189385332046727417803297364056176
     def multi_step(self, system_data, nf=100):
         if isinstance(system_data, System_data_list):
             return Multi_step_result_list([system_data_i for system_data_i in system_data])
@@ -170,17 +170,21 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
             zt = self.meta_state_advance(zu)
         ydist_preds = stack_distributions(ydist_preds,dim=1) #size is (Nbatch, )
         return (ydist_preds, torch.stack(zvecs,dim=1)) if return_z else ydist_preds
-    def multi_step(self, uydata, nf=100, filter_p = 1, sample_filter_p = 0):
-        nf = len(uydata[0])-max(self.na, self.nb) if nf=='sim' else nf
-        upast, ypast, ufuture, yfuture = self.make_training_arrays(uydata, nf=nf)
+    def multi_step(self, system_data, nf=100, filter_p = 1, sample_filter_p = 0):
+        if isinstance(system_data, System_data_list):
+            return Multi_step_result_list([system_data_i for system_data_i in system_data])
+        assert isinstance(system_data, System_data)
+        if nf=='sim':
+            nf = len(system_data) - max(self.na, self.nb)
+        upast, ypast, ufuture, yfuture = self.make_training_arrays(system_data, nf=nf)
         with torch.no_grad():
             y_dists, zfuture = self.filter(upast, ypast, ufuture, yfuture, return_z=True, \
                 filter_p=filter_p, sample_filter_p=sample_filter_p)
         I = self.norm.input_inverse_transform
         O = self.norm.output_inverse_transform
-        test_norm = Norm(uydata[0], uydata[1])
+        test_norm = Norm(system_data.u, system_data.y)
         return Multi_step_result(O(yfuture), O(y_dists), test_norm, \
-            data=uydata, ufuture=I(ufuture), upast=I(upast), ypast=O(ypast), zfuture=zfuture)
+            data=system_data, ufuture=I(ufuture), upast=I(upast), ypast=O(ypast), zfuture=zfuture)
 
 def cat_torch_arrays(arrays):
     # [(x1,x2,y1), (x1,x2,y2)] -> [cat([x1,x2]), cat([x2,x2])]

@@ -6,9 +6,9 @@ from torch import distributions
 from metaSI.distributions.base_distributions import Distrubution, stack_distributions, Multimodal_distrubution
 
 class Multimodal_Normal(Multimodal_distrubution):
-    def __init__(self, loc, scale, weights):
-        super(Multimodal_Normal, self).__init__(weights)
-        assert loc.shape==scale.shape==weights.shape
+    def __init__(self, loc, scale, weights=None, log_weights=None):
+        super(Multimodal_Normal, self).__init__(weights=weights, log_weights=log_weights)
+        assert loc.shape==scale.shape==self.weights.shape
         #loc.shape = scale.shape = weights.shape = batch_shape + (,Nw)
         self.loc = loc
         self.scale = scale
@@ -17,17 +17,18 @@ class Multimodal_Normal(Multimodal_distrubution):
     ### Transforms ###
     def __add__(self, other):
         assert not isinstance(other, Distrubution)
-        return Multimodal_Normal(loc=self.loc + other, scale=self.scale, weights=self.weights)
+        return Multimodal_Normal(loc=self.loc + other, scale=self.scale, weights=self.weights, log_weights=self.log_weights)
     def __mul__(self, other):
         assert not isinstance(other, Distrubution)
-        return Multimodal_Normal(loc=self.loc*other, scale=self.scale*other, weights=self.weights)
+        return Multimodal_Normal(loc=self.loc*other, scale=self.scale*other, weights=self.weights, log_weights=self.log_weights)
     def __getitem__(self, x): 
         x = (x,) if not isinstance(x, tuple) else x
         E = slice(None,None,None)
         loc = self.loc[x+(...,E)]
         scale = self.scale[x+(...,E)]
         weights = self.weights[x+(...,E)]
-        return Multimodal_Normal(loc=loc, scale=scale, weights=weights)
+        log_weights = self.log_weights[x+(...,E)]
+        return Multimodal_Normal(loc=loc, scale=scale, weights=weights, log_weights=log_weights)
     
     @property
     def mean(self):
@@ -43,11 +44,12 @@ class Multimodal_Normal(Multimodal_distrubution):
         loc = torch.stack([l.loc for l in list_of_distributions], dim=dim)
         scale = torch.stack([l.scale for l in list_of_distributions], dim=dim)
         weights = torch.stack([l.weights for l in list_of_distributions], dim=dim)
-        return Multimodal_Normal(loc, scale, weights)
+        log_weights = torch.stack([l.log_weights for l in list_of_distributions], dim=dim)
+        return Multimodal_Normal(loc, scale, weights, log_weights)
 
 class Multimodal_MultivariateNormal(Multimodal_distrubution):
-    def __init__(self, loc, scale_tril, weights):
-        super(Multimodal_MultivariateNormal, self).__init__(weights)
+    def __init__(self, loc, scale_tril, weights=None, log_weights=None):
+        super(Multimodal_MultivariateNormal, self).__init__(weights=weights, log_weights=log_weights)
         #loc.shape = Batch_shape + (n_weights,) + (event_shape[0],)
         #scale_tri.shape = Batch_shape + (n_weights,) + (event_shape[0],event_shape[0])
         #weights.shape = Batch_shape + (n_weights,)
@@ -59,7 +61,7 @@ class Multimodal_MultivariateNormal(Multimodal_distrubution):
     def __add__(self, other):
         assert not isinstance(other, Distrubution)
         other = torch.as_tensor(other,dtype=self.loc.dtype)
-        return Multimodal_MultivariateNormal(loc=self.loc + other, scale_tril=self.scale_tril, weights=self.weights)
+        return Multimodal_MultivariateNormal(loc=self.loc + other, scale_tril=self.scale_tril, weights=self.weights, log_weights=self.log_weights)
     def __mul__(self, other):
         assert not isinstance(other, Distrubution)
         #other has shape = ..., ny
@@ -75,7 +77,7 @@ class Multimodal_MultivariateNormal(Multimodal_distrubution):
         other = torch.as_tensor(other,dtype=self.loc.dtype)
         # print('other.shape',other.shape)
         # print(self.loc.shape)
-        return Multimodal_MultivariateNormal(loc=self.loc@other.T, scale_tril=self.scale_tril@other.T, weights=self.weights)
+        return Multimodal_MultivariateNormal(loc=self.loc@other.T, scale_tril=self.scale_tril@other.T, weights=self.weights, log_weights=self.log_weights)
     
     def __getitem__(self, x): #this does not work for event shapes
         #this might not work entirely correctly
@@ -84,13 +86,15 @@ class Multimodal_MultivariateNormal(Multimodal_distrubution):
         loc = self.loc[x+(...,E)]
         scale_tril = self.scale_tril[x+(...,E,E)]
         weights = self.weights[x+(...,E)]
-        return Multimodal_MultivariateNormal(loc=loc, scale_tril=scale_tril, weights=weights)
+        log_weights = self.log_weights[x+(...,E)]
+        return Multimodal_MultivariateNormal(loc=loc, scale_tril=scale_tril, weights=weights, log_weights=log_weights)
     
     def stack(self, list_of_others, dim=0):
         loc = torch.stack([l.loc for l in list_of_others],dim=dim)
         scale_tril = torch.stack([l.scale_tril for l in list_of_others],dim=dim)
         weights = torch.stack([l.weights for l in list_of_others],dim=dim)
-        return Multimodal_MultivariateNormal(loc, scale_tril, weights)
+        log_weights = torch.stack([l.log_weights for l in list_of_others],dim=dim)
+        return Multimodal_MultivariateNormal(loc, scale_tril, weights, log_weights)
 
     @property
     def mean(self):

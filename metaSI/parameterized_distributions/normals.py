@@ -49,21 +49,22 @@ class Par_multimodal_normal(nnModule_with_fit):
         
         logwmax = torch.max(logw,dim=-1).values[...,None]
         logwminmax = logw - logwmax
-        w = torch.exp(logwminmax)
-        w = w/torch.sum(w,dim=-1)[...,None]
+        # w = torch.exp(logwminmax)
+        # w = w/torch.sum(w,dim=-1)[...,None]
+        logw = logwminmax - torch.log(torch.sum(torch.exp(logwminmax),dim=-1)[...,None])
         
         loc = self.loc_net(z) #output is (Nb, n_weights)
         scale = torch.exp(self.logscale_net(z)) #output is (Nb, n_weights)
         if self.ny is None:
-            dist = Multimodal_Normal(loc, scale, weights=w)
+            dist = Multimodal_Normal(loc, scale, log_weights=logw)
         else:
             loc = loc.view(loc.shape[0], self.n_weights, self.ny)       #(Nb, n_weights, ny)
             scale = scale.view(scale.shape[0], self.n_weights, self.ny) #(Nb, n_weights, ny)
-            scale_tril = torch.diag_embed(scale)                         #(Nb, n_weights, ny, ny)
+            scale_tril = torch.diag_embed(scale)                        #(Nb, n_weights, ny, ny)
             if self.logscale_od_net:
                 out = self.logscale_od_net(z).view(loc.shape[0], self.n_weights, self.ny, self.ny)
                 scale_tril = scale_tril + torch.tril(out,diagonal=-1)
-            dist = Multimodal_MultivariateNormal(loc=loc, scale_tril=scale_tril, weights=w)
+            dist = Multimodal_MultivariateNormal(loc=loc, scale_tril=scale_tril, log_weights=logw)
         return dist
     
     def loss(self, z, y):

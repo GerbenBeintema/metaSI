@@ -43,19 +43,22 @@ def stack_distributions(list_of_distributions, dim=0):
 
 
 class Multimodal_distrubution(Distrubution):
-    def __init__(self, weights): #also other parameters?
+    def __init__(self, weights=None, log_weights=None): #also other parameters?
+        assert weights!=None or log_weights!=None, 'either weights or the log of the weights should be given'
+        if log_weights==None:
+            log_weights = torch.log(weights)
+        elif weights==None:
+            weights = torch.exp(log_weights)
         if not torch.allclose(torch.sum(weights,dim=-1), torch.tensor(1.)):
-            # wsum = torch.sum(weights,dim=-1)
-            # for i,(wsumi, w) in enumerate(zip(wsum,weights)):
-            #     print(i, wsumi-1, w)
-            raise ValueError
+            raise ValueError('The weights of the Multimodal distribution do not sum to 1')
         assert torch.all(weights>=0)
         self.weights = weights
+        self.log_weights = log_weights
 
     def log_prob_per_weighted(self, other):
         s = (...,None) + (slice(None,None,None),)*len(self.event_shape)
         log_probs = super(Multimodal_distrubution, self).log_prob(other[s]) # (Nb, Nw) #add the weights dimention
-        return torch.log(self.weights) + log_probs #(Nb, n_weights)
+        return self.log_weights + log_probs #(Nb, n_weights)
     def log_prob(self, other):
         Z = self.log_prob_per_weighted(other)
         Zmax = torch.max(Z,dim=-1).values

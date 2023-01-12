@@ -57,8 +57,16 @@ class System_data():
 
     def train_test_split(self,split_fraction=0.25):
         '''returns 2 data sets of length n*(1-split_fraction) and n*split_fraction respectively (left, right) split'''
+        if isinstance(split_fraction, (tuple, list)):
+            if len(split_fraction)==1:
+                return [self]
+            assert sum(split_fraction)==1, str(split_fraction)
+            now, rest = self.train_test_split(split_fraction=1-split_fraction[0])
+            S = sum(split_fraction[1:])
+            others = rest.train_test_split([s/S for s in split_fraction[1:]])
+            return [now] + others
         n_samples = self.u.shape[0]
-        split_n = int(n_samples*(1 - split_fraction))
+        split_n = int(round(n_samples*(1 - split_fraction)))
         ul,ur,yl,yr = self.u[:split_n], self.u[split_n:], \
                         self.y[:split_n], self.y[split_n:]
         if self.x is None:

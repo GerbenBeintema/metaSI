@@ -18,7 +18,7 @@ class Angle_pdf(Distrubution):
     def batch_shape(self):
         return self.c.shape
     
-    def log_prob(self, th): #up to 1e6
+    def log_prob(self, th): #up to 1e6 of c
 #         x = 
         #Ai0e(c) == Ai0(c)*torch.exp(-abs(c))
         #Ai0e(c)*torch.exp(abs(c)) == Ai0(c)
@@ -36,11 +36,15 @@ class Angle_pdf(Distrubution):
         return (pdf_normal.sample(sample_shape)+torch.pi)%(2*torch.pi) - torch.pi
         
 class Multimodal_Angle_pdf(Multimodal_distrubution):
-    def __init__(self, c, deltath, weights): #add a, b options
-        super(Multimodal_Angle_pdf, self).__init__(weights)
-        assert c.shape==deltath.shape==weights.shape
+    def __init__(self, c, deltath, weights=None, log_weights=None): #add a, b options
+        super(Multimodal_Angle_pdf, self).__init__(weights, log_weights)
+        assert c.shape==deltath.shape==self.weights.shape
         #loc.shape = scale.shape = weights.shape = batch_shape + (,Nw)
         self.dist = Angle_pdf(c, deltath)
+
+        #some parameters to compute the mean
+        self.mean_integration_num0 = 360
+        self.tol_mean_integration = 0.10
     
     @property
     def c(self):
@@ -54,12 +58,12 @@ class Multimodal_Angle_pdf(Multimodal_distrubution):
         if np.all(other==0):
             return self
         else:
-            assert False, 'Transforming an angle pdf does not make sence'
+            assert False, 'Transforming an angle pdf does not make sense to me'
     def __mul__(self, other):
         if np.all(other==1):
             return self
         else:
-            assert False, 'Transforming an angle pdf does not make sence'
+            assert False, 'Transforming an angle pdf does not make sense to me'
 
     def __getitem__(self, x): 
         x = (x,) if not isinstance(x, tuple) else x
@@ -67,42 +71,29 @@ class Multimodal_Angle_pdf(Multimodal_distrubution):
         c = self.c[x+(...,E)]
         deltath = self.deltath[x+(...,E)]
         weights = self.weights[x+(...,E)]
-        return Multimodal_Angle_pdf(c=c, deltath=deltath, weights=weights)
+        log_weights = self.log_weights[x+(...,E)]
+        return Multimodal_Angle_pdf(c=c, deltath=deltath, weights=weights, log_weights=log_weights)
     #event_shape and batch_shape
     @property
     def mean(self):
-        w = self.weights.view(-1,self.weights.shape[-1]).detach()
-        wmax_index = torch.argmax(w,dim=-1)
-        deltath = self.deltath.view(-1,self.weights.shape[-1]).detach()
-        c = self.c.view(-1,self.weights.shape[-1]).detach()
-        delta = deltath[np.arange(deltath.shape[0]),wmax_index] + (c[np.arange(deltath.shape[0]),wmax_index]<0)*torch.pi
-        delta = delta.view(self.weights.shape[:-1])
+        # complex numbers to compute mean
+        # 
+        # mean = arg(\int exp(i th) p(th))
+        #    r = \int cos(th) * p(th) dth
+        #    i = \int sin(th) * p(th) dth
+        # mean = atan2(i, r)
         E = slice(None,None,None)
-        th_test_0 = torch.linspace(-torch.pi,torch.pi,300)[(E,) + (None,)*len(self.batch_shape)]
-        K1 = 0
+        mean_integration_num = self.mean_integration_num0
         while True:
-            K1 += 1
-            K2 = 0
-            delta_last = delta
-            while True:
-                K2 += 1 
-                th_test = th_test_0+delta[(None,)+(E,)*len(self.batch_shape)]
-                pth = self.prob(th_test)
-
-                err = torch.mean(pth*th_test,dim=0)*2*torch.pi - delta
-                derr = pth[0]*torch.pi*2 - 1
-                delta = delta - err/derr
-                delta = (delta + torch.pi)%(2*torch.pi) - torch.pi
-                if torch.allclose(delta_last, delta) or K2==20:
-                    break
-                delta_last = delta
-            if torch.all(derr<0):
+            th_test_0 = torch.linspace(-torch.pi, torch.pi, mean_integration_num)[(E,) + (None,)*len(self.batch_shape)]
+            pth = self.prob(th_test_0)
+            if torch.all(abs(torch.mean(pth)*2*torch.pi - 1)<self.tol_mean_integration):
                 break
-            print(K1, torch.sum(derr>0))
-            delta = delta + torch.pi*(derr>0)*(torch.randn(delta.shape)*2 if K1>1 else 1)
-            if K1==20:
-                break
-        return delta
+            mean_integration_num = mean_integration_num*2
+            assert mean_integration_num<10_000, "Failed to couldn't compute mean due to integration errors int(p(th) dth)!=1"
+        real_part = torch.mean(torch.cos(th_test_0) * pth, axis=0)*2*torch.pi
+        imaginary_part = torch.mean(torch.sin(th_test_0) * pth, axis=0)*2*torch.pi
+        return torch.atan2(imaginary_part, real_part)
     
     @property
     def stddev(self):
@@ -117,4 +108,5 @@ class Multimodal_Angle_pdf(Multimodal_distrubution):
         c = torch.stack([l.c for l in list_of_distributions], dim=dim)
         deltath = torch.stack([l.deltath for l in list_of_distributions], dim=dim)
         weights = torch.stack([l.weights for l in list_of_distributions], dim=dim)
-        return Multimodal_Angle_pdf(c, deltath, weights)
+        log_weights = torch.stack([l.log_weights for l in list_of_distributions], dim=dim)
+        return Multimodal_Angle_pdf(c, deltath, weights, log_weights)
