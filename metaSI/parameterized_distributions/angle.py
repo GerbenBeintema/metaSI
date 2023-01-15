@@ -23,9 +23,9 @@ class Par_multimodal_angle_pdf(nnModule_with_fit):
         self.nth_val = 1 if self.nth==None else self.nth
         self.n_components = n_components
         
-        self.weight_net =   weight_net(self.nz_val, n_components, **weight_net_kwargs)
-        self.loc_net =  loc_net(self.nz_val, n_components*self.nth_val, **loc_net_kwargs)
-        self.k_net =        k_net(self.nz_val, n_components*self.nth_val, **k_net_kwargs) 
+        self.weight_net = weight_net(self.nz_val, n_components, **weight_net_kwargs)
+        self.loc_net =    loc_net(self.nz_val, n_components*self.nth_val, **loc_net_kwargs)
+        self.k_net =      k_net(self.nz_val, n_components*self.nth_val, **k_net_kwargs) 
 
     def get_dist(self, z):
         znormed = self.norm.input_transform(z)
@@ -38,8 +38,6 @@ class Par_multimodal_angle_pdf(nnModule_with_fit):
         
         logwmax = torch.max(logw,dim=-1).values[...,None] #(Nb, 1)
         logwminmax = logw - logwmax #(Nb, n_components) - (Nb, 1)
-        # w = torch.exp(logwminmax)
-        # w = w/torch.sum(w,dim=-1)[...,None]
         logw = logwminmax - torch.log(torch.sum(torch.exp(logwminmax),dim=-1, keepdim=True))
         
         loc = self.loc_net(z)*torch.pi #output is (Nb, n_components)

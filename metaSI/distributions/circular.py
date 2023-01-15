@@ -38,7 +38,7 @@ class VonMises(Distrubution):
             if torch.all(abs(torch.mean(pth)*2*torch.pi - 1)<self._tol_mean_integration):
                 break
             mean_integration_num = mean_integration_num*2
-            assert mean_integration_num<20_000, "Failed to couldn't compute mean due to integration errors int(p(th) dth)!=1"
+            assert mean_integration_num<self._max_mean_integration_num, "Failed to couldn't compute mean due to integration errors int(p(th) dth)!=1"
         real_part = torch.mean(torch.cos(th_test_0) * pth, axis=0)*2*torch.pi
         imaginary_part = torch.mean(torch.sin(th_test_0) * pth, axis=0)*2*torch.pi
         return torch.atan2(imaginary_part, real_part)
