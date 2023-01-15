@@ -2,3 +2,6 @@
 /metaSI.egg-info/
 __pycache__/
 /build/
+/old/
+examples/.ipynb_checkpoints/
+.vscode/

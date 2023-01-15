@@ -2,7 +2,7 @@
 from metaSI.data.norms import Norm
 from metaSI.utils.fitting import nnModule_with_fit
 from metaSI.utils.networks import MLP_res_net
-from metaSI.parameterized_distributions.normals import Par_multimodal_normal
+from metaSI.density_networks.normals import Gaussian_mixture_network
 
 import torch
 import numpy as np
@@ -12,12 +12,10 @@ from metaSI.data.simulation_results import Multi_step_result, Multi_step_result_
 from torch import nn
 from metaSI.data.system_data import System_data, System_data_list
 
-
-
 class Meta_SS_model(nnModule_with_fit):
     def __init__(self, nu, ny, norm: Norm = Norm(), nz=5, \
         meta_state_advance_net = MLP_res_net, meta_state_advance_kwargs = {},
-        meta_state_to_output_dist_net = Par_multimodal_normal, meta_state_to_output_dist_kwargs=dict(n_components=10)):
+        meta_state_to_output_dist_net = Gaussian_mixture_network, meta_state_to_output_dist_kwargs=dict(n_components=10)):
         super(Meta_SS_model, self).__init__()
         self.nz = nz
         self.ny = ny
@@ -66,7 +64,7 @@ class Meta_SS_model(nnModule_with_fit):
 
     def multi_step(self, system_data, nf=100):
         if isinstance(system_data, System_data_list):
-            return Multi_step_result_list([system_data_i for system_data_i in system_data])
+            return Multi_step_result_list([self.multi_step(system_data_i, nf=nf) for system_data_i in system_data])
         assert isinstance(system_data, System_data)
         if nf=='sim':
             nf = len(system_data)
@@ -81,7 +79,7 @@ class Meta_SS_model(nnModule_with_fit):
 class Meta_SS_model_encoder(Meta_SS_model):
     def __init__(self, nu: int, ny: int, norm: Norm = Norm(), nz: int=5, na: int=6, nb: int=6,\
                 meta_state_advance_net = MLP_res_net, meta_state_advance_kwargs = {},\
-                meta_state_to_output_dist_net = Par_multimodal_normal, meta_state_to_output_dist_kwargs=dict(n_components=10),\
+                meta_state_to_output_dist_net = Gaussian_mixture_network, meta_state_to_output_dist_kwargs=dict(n_components=10),\
                 past_to_meta_state_net = MLP_res_net, past_to_meta_state_kwargs={}):
         super(Meta_SS_model_encoder, self).__init__(nu, ny, norm, nz, meta_state_advance_net=meta_state_advance_net,\
                 meta_state_advance_kwargs=meta_state_advance_kwargs, meta_state_to_output_dist_net=meta_state_to_output_dist_net,\
@@ -113,7 +111,7 @@ class Meta_SS_model_encoder(Meta_SS_model):
         return torch.mean(-ydist_preds[:,burn_time:].log_prob(yfuture[:,burn_time:]))/self.ny_val + - 1.4189385332046727417803297364056176
     def multi_step(self, system_data, nf=100):
         if isinstance(system_data, System_data_list):
-            return Multi_step_result_list([system_data_i for system_data_i in system_data])
+            return Multi_step_result_list([self.multi_step(system_data_i, nf=nf) for system_data_i in system_data])
         assert isinstance(system_data, System_data)
         if nf=='sim':
             nf = len(system_data) - max(self.na, self.nb)
@@ -134,7 +132,7 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
     '''
     def __init__(self, nu: int, ny: int, norm: Norm = Norm(), nz: int=5, na: int=6, nb: int=6,\
                 meta_state_advance_net = MLP_res_net, meta_state_advance_kwargs = {},\
-                meta_state_to_output_dist_net = Par_multimodal_normal, meta_state_to_output_dist_kwargs=dict(n_components=10),\
+                meta_state_to_output_dist_net = Gaussian_mixture_network, meta_state_to_output_dist_kwargs=dict(n_components=10),\
                 past_to_meta_state_net = MLP_res_net, past_to_meta_state_kwargs={}, 
                 measure_update_net = MLP_res_net, measure_update_kwargs={}):
         super(Meta_SS_model_measure_encoder, self).__init__(nu, ny, norm, nz, na, nb, meta_state_advance_net=meta_state_advance_net,\
@@ -158,10 +156,7 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
             ydist_preds.append(ydist_pred)
             zvecs.append(zt)
             if random.random()<filter_p: #filter using output
-                if random.random()<sample_filter_p:
-                    ysamp = ydist_pred.sample()
-                else:
-                    ysamp = yt
+                ysamp = ydist_pred.sample() if random.random()<sample_filter_p else yt
                 zy = torch.cat([zt, ysamp], dim=1)
                 zm = self.measure_update(zy)
             else: #skip filter step and recover old implementation
@@ -172,7 +167,8 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
         return (ydist_preds, torch.stack(zvecs,dim=1)) if return_z else ydist_preds
     def multi_step(self, system_data, nf=100, filter_p = 1, sample_filter_p = 0):
         if isinstance(system_data, System_data_list):
-            return Multi_step_result_list([system_data_i for system_data_i in system_data])
+            res = [self.multi_step(system_data_i, nf=nf, filter_p=filter_p, sample_filter_p=sample_filter_p) for system_data_i in system_data]
+            return Multi_step_result_list(res)
         assert isinstance(system_data, System_data)
         if nf=='sim':
             nf = len(system_data) - max(self.na, self.nb)

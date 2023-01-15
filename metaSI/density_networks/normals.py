@@ -15,13 +15,13 @@ import numpy as np
 import torch
 
 #this is normal distribution or 
-class Par_multimodal_normal(nnModule_with_fit):
+class Gaussian_mixture_network(nnModule_with_fit):
     def __init__(self, nz, ny, norm: Norm = Norm(), n_components=10, \
                 weight_net=MLP_res_net, weight_net_kwargs={}, 
                 loc_net=MLP_res_net, loc_net_kwargs={}, 
                 logscale_net=MLP_res_net, logscale_net_kwargs={},
                 logscale_od_net=None, logscale_od_net_kwargs={}):
-        super(Par_multimodal_normal, self).__init__()
+        super(Gaussian_mixture_network, self).__init__()
         self.norm = norm
         
         self.nz = nz #(None if z.ndim==1 else z.shape[-1]) if isinstance(z,(np.ndarray)) else z
@@ -97,7 +97,7 @@ if __name__=='__main__' and True:
     logscale_net_kwargs = {'bias_scale':0.75}
     from metaSI.data.norms import get_nu_ny_and_auto_norm
 
-    model = Par_multimodal_normal(*get_nu_ny_and_auto_norm(*train),n_components=n_components,\
+    model = Gaussian_mixture_network(*get_nu_ny_and_auto_norm(*train),n_components=n_components,\
         weight_net_kwargs=weight_net_kwargs, loc_net_kwargs=loc_net_kwargs, logscale_net_kwargs=logscale_net_kwargs)
     print('std before weight_net',torch.std(model.weight_net.net_lin.bias))
     print('std before loc_net',torch.std(model.loc_net.net_lin.bias))
@@ -163,7 +163,7 @@ if __name__=='__main__' and False:
     logscale_net_kwargs = {'bias_scale':0.75}
     logscale_od_net = MLP_res_net #None for 
 
-    model = Par_multimodal_normal(*get_nuy_and_auto_norm(*train),n_components=n_components,\
+    model = Gaussian_mixture_network(*get_nuy_and_auto_norm(*train),n_components=n_components,\
             weight_net_kwargs=weight_net_kwargs, \
             loc_net_kwargs=loc_net_kwargs, \
             logscale_net_kwargs=logscale_net_kwargs, \
@@ -219,7 +219,7 @@ if __name__=='__main__' and False:
     from matplotlib import pyplot as plt
 
     n_components = 20
-    model = Par_multimodal_normal(*get_nuy_and_auto_norm(*train), n_components=n_components)
+    model = Gaussian_mixture_network(*get_nuy_and_auto_norm(*train), n_components=n_components)
 
     import pickle
     load, name = True, 'models/toy-example-depedent-static-dist-model-3'

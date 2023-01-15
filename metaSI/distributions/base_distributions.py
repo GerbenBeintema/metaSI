@@ -49,8 +49,6 @@ def stack_distributions(list_of_distributions, dim=0): #potentially add some lis
     l = list_of_distributions[0]
     return l.stack(list_of_distributions, dim=dim)
 
-
-
 #todo:
 #add covariance?
 #crossing of distributions (concat)

@@ -1,0 +1,5 @@
+import metaSI.density_networks.circular
+import metaSI.density_networks.normals
+
+from metaSI.density_networks.circular import Circular_mixture_network
+from metaSI.density_networks.normals import Gaussian_mixture_network

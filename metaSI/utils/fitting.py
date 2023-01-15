@@ -12,8 +12,8 @@ from tqdm.auto import tqdm
 
 class nnModule_with_fit(nn.Module):
     def fit(self, train, val, iterations=10_000, batch_size=256, loss_kwargs={}, \
-            print_freq=100, loss_kwargs_val=None, call_back_validation=None, val_freq=None, optimizer=None,\
-            save_freq=None, save_filename=None):
+            print_freq=100, loss_kwargs_val=None, call_back_validation=None, \
+            val_freq=None, optimizer=None, save_freq=None, save_filename=None):
         '''The main fitting function        
         '''
         loss_kwargs_val = (loss_kwargs if loss_kwargs_val is None else loss_kwargs_val)
@@ -50,9 +50,10 @@ class nnModule_with_fit(nn.Module):
                 loss_train_acc += loss.item()
                 
                 if iteration%val_freq==0:  #Validation
-                    loss_val = self.loss(*val_data, **loss_kwargs_val).item() if \
-                        call_back_validation is None else call_back_validation(locals(), globals())
-                    
+                    if call_back_validation is None:
+                        loss_val = self.loss(*val_data, **loss_kwargs_val).item()
+                    else:
+                        loss_val = call_back_validation(locals(), globals())
                     if loss_val<lowest_val_loss_seen:
                         lowest_val_loss_seen = loss_val
                         self.checkpoint_save('lowest_val_loss')

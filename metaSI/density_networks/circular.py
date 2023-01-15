@@ -4,7 +4,7 @@ from metaSI.utils.networks import MLP_res_net
 import torch
 from metaSI.distributions.circular import Mixture_VonMises
 
-class Par_multimodal_angle_pdf(nnModule_with_fit):
+class Circular_mixture_network(nnModule_with_fit):
     ## form a p_theta(th|z) = Multimodal_Angle_pdf(th | c(z), th(z), weights(z))
     ## 
     ##
@@ -12,7 +12,7 @@ class Par_multimodal_angle_pdf(nnModule_with_fit):
                 weight_net=MLP_res_net, weight_net_kwargs={}, 
                 loc_net=MLP_res_net, loc_net_kwargs={}, 
                 k_net=MLP_res_net, k_net_kwargs={}):
-        super(Par_multimodal_angle_pdf, self).__init__()
+        super(Circular_mixture_network, self).__init__()
         self.norm = norm
         assert self.norm.ymean==0 and self.norm.ystd==1
         

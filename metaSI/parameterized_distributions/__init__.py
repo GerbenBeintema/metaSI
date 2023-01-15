@@ -1,5 +1,0 @@
-import metaSI.parameterized_distributions.angle
-import metaSI.parameterized_distributions.normals
-
-from metaSI.parameterized_distributions.angle import Par_multimodal_angle_pdf
-from metaSI.parameterized_distributions.normals import Par_multimodal_normal
