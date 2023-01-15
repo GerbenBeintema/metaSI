@@ -3,13 +3,11 @@ from matplotlib import pyplot as plt
 import torch
 from torch import distributions
 
-from metaSI.distributions.base_distributions import Distrubution, stack_distributions, Multimodal_distrubution
+from metaSI.distributions.base_distributions import Distrubution, stack_distributions, Mixture
 
-class Multimodal_Normal(Multimodal_distrubution):
-    def __init__(self, loc, scale, weights=None, log_weights=None):
-        super(Multimodal_Normal, self).__init__(weights=weights, log_weights=log_weights)
-        assert loc.shape==scale.shape==self.weights.shape
-        #loc.shape = scale.shape = weights.shape = batch_shape + (,Nw)
+class Normal(Distrubution):
+    def __init__(self, loc, scale) -> None:
+        assert loc.shape==scale.shape
         self.loc = loc
         self.scale = scale
         self.dist = distributions.normal.Normal(loc, scale)
@@ -17,90 +15,82 @@ class Multimodal_Normal(Multimodal_distrubution):
     ### Transforms ###
     def __add__(self, other):
         assert not isinstance(other, Distrubution)
-        return Multimodal_Normal(loc=self.loc + other, scale=self.scale, weights=self.weights, log_weights=self.log_weights)
+        return Normal(loc=self.loc + other, scale=self.scale)
     def __mul__(self, other):
         assert not isinstance(other, Distrubution)
-        return Multimodal_Normal(loc=self.loc*other, scale=self.scale*other, weights=self.weights, log_weights=self.log_weights)
+        return Normal(loc=self.loc*other, scale=self.scale*other)
     def __getitem__(self, x): 
-        x = (x,) if not isinstance(x, tuple) else x
-        E = slice(None,None,None)
-        loc = self.loc[x+(...,E)]
-        scale = self.scale[x+(...,E)]
-        weights = self.weights[x+(...,E)]
-        log_weights = self.log_weights[x+(...,E)]
-        return Multimodal_Normal(loc=loc, scale=scale, weights=weights, log_weights=log_weights)
-    
+        return Normal(self.loc[x], self.scale[x])
     @property
     def mean(self):
-        return torch.sum(self.loc*self.weights,dim=-1)
-    @property
-    def stddev(self):
-        return self.variance**0.5
+        return self.loc
     @property
     def variance(self):
-        mean = self.mean
-        return torch.sum(((mean[...,None]-self.loc)**2 + self.scale**2)*self.weights,dim=-1)
+        return self.scale
     def stack(self, list_of_distributions, dim=0):
         loc = torch.stack([l.loc for l in list_of_distributions], dim=dim)
         scale = torch.stack([l.scale for l in list_of_distributions], dim=dim)
-        weights = torch.stack([l.weights for l in list_of_distributions], dim=dim)
-        log_weights = torch.stack([l.log_weights for l in list_of_distributions], dim=dim)
-        return Multimodal_Normal(loc, scale, weights, log_weights)
+        return Normal(loc, scale)
 
-class Multimodal_MultivariateNormal(Multimodal_distrubution):
-    def __init__(self, loc, scale_tril, weights=None, log_weights=None):
-        super(Multimodal_MultivariateNormal, self).__init__(weights=weights, log_weights=log_weights)
-        #loc.shape = Batch_shape + (n_weights,) + (event_shape[0],)
-        #scale_tri.shape = Batch_shape + (n_weights,) + (event_shape[0],event_shape[0])
-        #weights.shape = Batch_shape + (n_weights,)
+class Multivariate_Normal(Distrubution):
+    def __init__(self, loc, scale_tril):
         self.loc = loc
         self.scale_tril = scale_tril
-        self.dist = distributions.multivariate_normal.MultivariateNormal(loc, scale_tril=scale_tril)
-        
+        self.dist = distributions.multivariate_normal.MultivariateNormal(loc=loc, scale_tril=scale_tril)
+    
     ### Transforms ###
     def __add__(self, other):
         assert not isinstance(other, Distrubution)
-        other = torch.as_tensor(other,dtype=self.loc.dtype)
-        return Multimodal_MultivariateNormal(loc=self.loc + other, scale_tril=self.scale_tril, weights=self.weights, log_weights=self.log_weights)
+        return Multivariate_Normal(loc=self.loc + torch.as_tensor(other,dtype=torch.float), scale_tril=self.scale_tril)
     def __mul__(self, other):
         assert not isinstance(other, Distrubution)
-        #other has shape = ..., ny
-        other = other.numpy() if isinstance(other, torch.Tensor) else np.array(other)
-        other = np.apply_along_axis(np.diag, -1, other)
-        return self.__rmatmul__(other)
-    def __matmul__(self, other):
-        #self@other
-        assert False
+        if not isinstance(other, torch.Tensor):
+            other = torch.as_tensor(other, dtype=torch.float)
+        if other.ndim < 2:
+            other = torch.eye(self.event_shape[0])*other
+        return Multivariate_Normal(loc=self.loc@other, scale_tril=self.scale_tril@other)
     def __rmatmul__(self, other):
-        #other@self
-        #other has shape = ..., ny, ny
-        other = torch.as_tensor(other,dtype=self.loc.dtype)
-        # print('other.shape',other.shape)
-        # print(self.loc.shape)
-        return Multimodal_MultivariateNormal(loc=self.loc@other.T, scale_tril=self.scale_tril@other.T, weights=self.weights, log_weights=self.log_weights)
-    
-    def __getitem__(self, x): #this does not work for event shapes
-        #this might not work entirely correctly
-        x = (x,) if not isinstance(x, tuple) else x
-        E = slice(None,None,None)
-        loc = self.loc[x+(...,E)]
-        scale_tril = self.scale_tril[x+(...,E,E)]
-        weights = self.weights[x+(...,E)]
-        log_weights = self.log_weights[x+(...,E)]
-        return Multimodal_MultivariateNormal(loc=loc, scale_tril=scale_tril, weights=weights, log_weights=log_weights)
-    
-    def stack(self, list_of_others, dim=0):
-        loc = torch.stack([l.loc for l in list_of_others],dim=dim)
-        scale_tril = torch.stack([l.scale_tril for l in list_of_others],dim=dim)
-        weights = torch.stack([l.weights for l in list_of_others],dim=dim)
-        log_weights = torch.stack([l.log_weights for l in list_of_others],dim=dim)
-        return Multimodal_MultivariateNormal(loc, scale_tril, weights, log_weights)
+        LTA = self.scale_tril.T@other
+        scale_tril = torch.linalg.cholesky(LTA.T@LTA) #might not be correct?
+        return Multivariate_Normal(loc=self.loc@other, scale_tril=scale_tril)
+    def __getitem__(self, x): 
+        return Multivariate_Normal(self.loc[x], self.scale_tril[x])
 
     @property
     def mean(self):
-        #loc.shape = Batch_shape + (n_weights,) + (event_shape[0],)
-        #weights.shape = Batch_shape + (n_weights,)
-        return torch.sum(self.loc*self.weights[...,None],dim=-2)
+        return self.loc
+    @property
+    def variance(self):
+        return self.scale_tril@self.scale_tril.T
+
+    def stack(self, list_of_distributions, dim=0):
+        loc = torch.stack([l.loc for l in list_of_distributions], dim=dim)
+        scale_tril = torch.stack([l.scale_tril for l in list_of_distributions], dim=dim)
+        return Multivariate_Normal(loc, scale_tril)
+
+    def __matmul__(self, other): #self@other
+        assert not isinstance(other, Distrubution)
+        loc = self.loc@other
+        scale_tril = self.loc@other
+        #Sigma = LL^T
+        #Sigma' = ALL^TA^T
+        mat = other@self.scale_tril
+        Sigma_new = torch.einsum('...ij,...kj', mat, mat)
+        scale_tril = torch.linalg.cholesky(Sigma_new)
+        return Multivariate_Normal(loc, scale_tril)
+    def __rmatmul__(self, other): #other@self
+        assert not isinstance(other, Distrubution)
+        assert False
+        return self.__class__(other@self.dists, self.weights, self.log_weights)
+
+
+def Mixture_normals(locs, scales, weights=None, log_weights=None):
+    dists = Normal(locs, scales)
+    return Mixture(dists, weights, log_weights)
+
+def Mixture_multivariate_normals(locs, scale_trils, weights=None, log_weights=None):
+    dists = Multivariate_Normal(locs, scale_trils)
+    return Mixture(dists, weights, log_weights)
 
 if __name__=='__main__':
     Nb = ()
@@ -114,7 +104,7 @@ if __name__=='__main__':
     weights = weights/torch.sum(weights,dim=-1)[...,None]
 
 
-    m = Multimodal_Normal(locs, scales, weights)
+    m = Mixture_normals(locs, scales, weights)
     print(m)
     ytest = torch.linspace(-2,4,500)
     pytest = m.prob(ytest)
@@ -135,9 +125,9 @@ if __name__=='__main__':
     Nb = ()
     torch.manual_seed(0)
     ny = 2
-    Nnormals = 2
+    Nnormals = 3
     shape_n = Nb + (Nnormals,)
-    locs = torch.as_tensor([[0,0],[2,2.]],dtype=torch.float)#torch.randn(shape_n + (ny,))/10
+    locs = torch.as_tensor([[0,0],[2,2.], [-2, -2]],dtype=torch.float)#
     scale_tril = torch.randn(shape_n + (ny,ny))
     for i in range(ny):
         for j in range(ny):
@@ -152,16 +142,18 @@ if __name__=='__main__':
     print(weights)
 
 
-    m = Multimodal_MultivariateNormal(locs, scale_tril, weights)
+    m = Mixture_multivariate_normals(locs, scale_tril, weights)
+    
     xx = torch.linspace(-5,5,501)
     yy = torch.linspace(-5,5,500)
     ytest = torch.stack(torch.meshgrid(yy, xx, indexing='xy'),dim=-1)
+    print(m.batch_shape, m.event_shape, ytest.shape)
     for _ in range(2):
 
         pytest = m.prob(ytest)#m.prob(ytest)
         print('sum=',torch.sum(pytest)*(xx[1]-xx[0])*(yy[1]-yy[0]))
         plt.contour(yy.numpy(),xx.numpy(),pytest.numpy())
-        plt.plot(*m.loc.numpy().T,'or')
+        plt.plot(*m.dists.loc.numpy().T,'or')
         plt.grid()
         plt.show()
         M = m.prob_per_weighted(ytest)
@@ -178,4 +170,6 @@ if __name__=='__main__':
         _ = m + np.array([2,2])
         m2 = m*[2,2]
 
-        m = m*[1,2]
+
+        th = np.pi/2
+        m = m@torch.as_tensor([[np.cos(th), np.sin(th)],[-np.sin(th), np.cos(th)]], dtype=torch.float)

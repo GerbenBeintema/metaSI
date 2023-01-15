@@ -17,7 +17,7 @@ from metaSI.data.system_data import System_data, System_data_list
 class Meta_SS_model(nnModule_with_fit):
     def __init__(self, nu, ny, norm: Norm = Norm(), nz=5, \
         meta_state_advance_net = MLP_res_net, meta_state_advance_kwargs = {},
-        meta_state_to_output_dist_net = Par_multimodal_normal, meta_state_to_output_dist_kwargs=dict(n_weights=10)):
+        meta_state_to_output_dist_net = Par_multimodal_normal, meta_state_to_output_dist_kwargs=dict(n_components=10)):
         super(Meta_SS_model, self).__init__()
         self.nz = nz
         self.ny = ny
@@ -81,7 +81,7 @@ class Meta_SS_model(nnModule_with_fit):
 class Meta_SS_model_encoder(Meta_SS_model):
     def __init__(self, nu: int, ny: int, norm: Norm = Norm(), nz: int=5, na: int=6, nb: int=6,\
                 meta_state_advance_net = MLP_res_net, meta_state_advance_kwargs = {},\
-                meta_state_to_output_dist_net = Par_multimodal_normal, meta_state_to_output_dist_kwargs=dict(n_weights=10),\
+                meta_state_to_output_dist_net = Par_multimodal_normal, meta_state_to_output_dist_kwargs=dict(n_components=10),\
                 past_to_meta_state_net = MLP_res_net, past_to_meta_state_kwargs={}):
         super(Meta_SS_model_encoder, self).__init__(nu, ny, norm, nz, meta_state_advance_net=meta_state_advance_net,\
                 meta_state_advance_kwargs=meta_state_advance_kwargs, meta_state_to_output_dist_net=meta_state_to_output_dist_net,\
@@ -134,7 +134,7 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
     '''
     def __init__(self, nu: int, ny: int, norm: Norm = Norm(), nz: int=5, na: int=6, nb: int=6,\
                 meta_state_advance_net = MLP_res_net, meta_state_advance_kwargs = {},\
-                meta_state_to_output_dist_net = Par_multimodal_normal, meta_state_to_output_dist_kwargs=dict(n_weights=10),\
+                meta_state_to_output_dist_net = Par_multimodal_normal, meta_state_to_output_dist_kwargs=dict(n_components=10),\
                 past_to_meta_state_net = MLP_res_net, past_to_meta_state_kwargs={}, 
                 measure_update_net = MLP_res_net, measure_update_kwargs={}):
         super(Meta_SS_model_measure_encoder, self).__init__(nu, ny, norm, nz, na, nb, meta_state_advance_net=meta_state_advance_net,\

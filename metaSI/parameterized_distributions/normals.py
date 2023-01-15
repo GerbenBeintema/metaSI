@@ -2,7 +2,7 @@
 from metaSI.utils.fitting import nnModule_with_fit
 from metaSI.data.norms import Norm
 from metaSI.utils.networks import MLP_res_net
-from metaSI.distributions.normals import Multimodal_Normal, Multimodal_MultivariateNormal
+from metaSI.distributions.normals import Mixture_multivariate_normals, Mixture_normals
 
 #the target of this file is to get a good way of approximating p_theta (y | z)
 #this is done by writting
@@ -16,7 +16,7 @@ import torch
 
 #this is normal distribution or 
 class Par_multimodal_normal(nnModule_with_fit):
-    def __init__(self, nz, ny, norm: Norm = Norm(), n_weights=10, \
+    def __init__(self, nz, ny, norm: Norm = Norm(), n_components=10, \
                 weight_net=MLP_res_net, weight_net_kwargs={}, 
                 loc_net=MLP_res_net, loc_net_kwargs={}, 
                 logscale_net=MLP_res_net, logscale_net_kwargs={},
@@ -28,13 +28,13 @@ class Par_multimodal_normal(nnModule_with_fit):
         self.ny = ny #(None if y.ndim==1 else y.shape[-1]) if isinstance(y,(np.ndarray)) else y
         self.nz_val = 1 if self.nz==None else self.nz
         self.ny_val = 1 if self.ny==None else self.ny
-        self.n_weights = n_weights
+        self.n_components = n_components
         
-        self.weight_net =   weight_net(self.nz_val, n_weights, **weight_net_kwargs)
-        self.loc_net =      loc_net(self.nz_val, n_weights*self.ny_val, **loc_net_kwargs)
-        self.logscale_net = logscale_net(self.nz_val, n_weights*self.ny_val, **logscale_net_kwargs) #This is the diagonal only
+        self.weight_net =   weight_net(self.nz_val, n_components, **weight_net_kwargs)
+        self.loc_net =      loc_net(self.nz_val, n_components*self.ny_val, **loc_net_kwargs)
+        self.logscale_net = logscale_net(self.nz_val, n_components*self.ny_val, **logscale_net_kwargs) #This is the diagonal only
         if logscale_od_net: #off diagonal terms
-            self.logscale_od_net = logscale_od_net(self.nz_val, n_weights*self.ny_val*self.ny_val, **logscale_od_net_kwargs)
+            self.logscale_od_net = logscale_od_net(self.nz_val, n_components*self.ny_val*self.ny_val, **logscale_od_net_kwargs)
         else:
             self.logscale_od_net = None
 
@@ -45,26 +45,22 @@ class Par_multimodal_normal(nnModule_with_fit):
     
     def get_dist_normed(self,z): #both the input and output are/will be normalized
         z = z.view(z.shape[0],-1) #to (Nb, nz)
-        logw = self.weight_net(z) #will be (Nb, n_weights)
-        
-        logwmax = torch.max(logw,dim=-1).values[...,None]
-        logwminmax = logw - logwmax
-        # w = torch.exp(logwminmax)
-        # w = w/torch.sum(w,dim=-1)[...,None]
+        logw = self.weight_net(z) #will be (Nb, n_components)
+        logwminmax = logw - torch.max(logw,dim=-1,keepdim=True).values
         logw = logwminmax - torch.log(torch.sum(torch.exp(logwminmax),dim=-1)[...,None])
         
-        loc = self.loc_net(z) #output is (Nb, n_weights)
-        scale = torch.exp(self.logscale_net(z)) #output is (Nb, n_weights)
+        locs = self.loc_net(z) #output is (Nb, n_components)
+        scale = torch.exp(self.logscale_net(z)) #output is (Nb, n_components)
         if self.ny is None:
-            dist = Multimodal_Normal(loc, scale, log_weights=logw)
+            dist = Mixture_normals(locs, scale, log_weights=logw)
         else:
-            loc = loc.view(loc.shape[0], self.n_weights, self.ny)       #(Nb, n_weights, ny)
-            scale = scale.view(scale.shape[0], self.n_weights, self.ny) #(Nb, n_weights, ny)
-            scale_tril = torch.diag_embed(scale)                        #(Nb, n_weights, ny, ny)
+            locs = locs.view(locs.shape[0], self.n_components, self.ny)       #(Nb, n_components, ny)
+            scale = scale.view(scale.shape[0], self.n_components, self.ny) #(Nb, n_components, ny)
+            scale_trils = torch.diag_embed(scale)                        #(Nb, n_components, ny, ny)
             if self.logscale_od_net:
-                out = self.logscale_od_net(z).view(loc.shape[0], self.n_weights, self.ny, self.ny)
-                scale_tril = scale_tril + torch.tril(out,diagonal=-1)
-            dist = Multimodal_MultivariateNormal(loc=loc, scale_tril=scale_tril, log_weights=logw)
+                out = self.logscale_od_net(z).view(locs.shape[0], self.n_components, self.ny, self.ny)
+                scale_trils = scale_trils + torch.tril(out,diagonal=-1)
+            dist = Mixture_multivariate_normals(locs=locs, scale_trils=scale_trils, log_weights=logw)
         return dist
     
     def loss(self, z, y):
@@ -95,13 +91,13 @@ if __name__=='__main__' and True:
     train = (z,ytrain)
     val = (z,yval)
 
-    n_weights = 1000
+    n_components = 1000
     weight_net_kwargs = {'bias_scale':2.0}
     loc_net_kwargs = {'bias_scale':0.75}
     logscale_net_kwargs = {'bias_scale':0.75}
     from metaSI.data.norms import get_nu_ny_and_auto_norm
 
-    model = Par_multimodal_normal(*get_nu_ny_and_auto_norm(*train),n_weights=n_weights,\
+    model = Par_multimodal_normal(*get_nu_ny_and_auto_norm(*train),n_components=n_components,\
         weight_net_kwargs=weight_net_kwargs, loc_net_kwargs=loc_net_kwargs, logscale_net_kwargs=logscale_net_kwargs)
     print('std before weight_net',torch.std(model.weight_net.net_lin.bias))
     print('std before loc_net',torch.std(model.loc_net.net_lin.bias))
@@ -161,13 +157,13 @@ if __name__=='__main__' and False:
     train = (np.zeros((len(ytrain),0)),ytrain)
     val = (np.zeros((len(yval),0)),yval)
 
-    n_weights = 20
+    n_components = 20
     weight_net_kwargs = {'bias_scale':1.5} #not critical for good performance
     loc_net_kwargs = {'bias_scale':0.75}
     logscale_net_kwargs = {'bias_scale':0.75}
     logscale_od_net = MLP_res_net #None for 
 
-    model = Par_multimodal_normal(*get_nuy_and_auto_norm(*train),n_weights=n_weights,\
+    model = Par_multimodal_normal(*get_nuy_and_auto_norm(*train),n_components=n_components,\
             weight_net_kwargs=weight_net_kwargs, \
             loc_net_kwargs=loc_net_kwargs, \
             logscale_net_kwargs=logscale_net_kwargs, \
@@ -222,8 +218,8 @@ if __name__=='__main__' and False:
 
     from matplotlib import pyplot as plt
 
-    n_weights = 20
-    model = Par_multimodal_normal(*get_nuy_and_auto_norm(*train), n_weights=n_weights)
+    n_components = 20
+    model = Par_multimodal_normal(*get_nuy_and_auto_norm(*train), n_components=n_components)
 
     import pickle
     load, name = True, 'models/toy-example-depedent-static-dist-model-3'
