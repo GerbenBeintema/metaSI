@@ -28,15 +28,16 @@ class Meta_SS_model(nnModule_with_fit):
         self.meta_state_to_output_dist = meta_state_to_output_dist_net(nz, ny, norm=Norm(), \
                                   **meta_state_to_output_dist_kwargs) #no norm here?
 
-    def make_training_arrays(self, system_data, nf=50, parameter_init=False, return_init_z=True, **kwargs):
+    def make_training_arrays(self, system_data, nf=50, parameter_init=False, return_init_z=True,  stride=1, **kwargs):
         if isinstance(system_data, System_data_list):
-            ufuture, yfuture = cat_torch_arrays([self.make_training_arrays(sd) for sd in system_data])
+            assert parameter_init==False, 'Using multiple datasets in the case of a parameterized start does not work yet'
+            ufuture, yfuture = cat_torch_arrays([self.make_training_arrays(sd, nf=nf, parameter_init=parameter_init,return_init_z=return_init_z,strid=stride)  for sd in system_data])
         else:
             assert isinstance(system_data, System_data)
             system_data_normed = self.norm.transform(system_data)
             u, y = system_data_normed.u, system_data_normed.y
             U, Y = [], []
-            for i in range(nf,len(u)+1):
+            for i in range(nf,len(u)+1, stride):
                 U.append(u[i-nf:i])
                 Y.append(y[i-nf:i])
             ufuture = torch.as_tensor(np.array(U), dtype=torch.float32)
@@ -44,7 +45,7 @@ class Meta_SS_model(nnModule_with_fit):
         self.init_z = nn.Parameter(torch.randn((len(ufuture), self.nz))) if parameter_init else torch.zeros((len(ufuture), self.nz))
         return (ufuture, yfuture, self.init_z) if return_init_z else (ufuture, yfuture)
     
-    def simulate(self, ufuture, yfuture, init_z, return_z=False):
+    def simulate(self, ufuture, yfuture, init_z, return_z=False, **kwargs):
         zt = init_z
         ydist_preds = []
         ufuture = ufuture[:,:,None] if self.nu is None else ufuture
@@ -87,14 +88,14 @@ class Meta_SS_model_encoder(Meta_SS_model):
         self.na = na
         self.nb = nb
         self.past_to_meta_state = past_to_meta_state_net(self.nu_val*nb+self.ny_val*na, nz, **past_to_meta_state_kwargs)
-    def make_training_arrays(self, system_data, nf=50, **kwargs):
+    def make_training_arrays(self, system_data, nf=50, stride=1, **kwargs):
         if isinstance(system_data, System_data_list):
-            return cat_torch_arrays([self.make_training_arrays(sd) for sd in system_data])
+            return cat_torch_arrays([self.make_training_arrays(sd, nf=nf, stride=stride) for sd in system_data])
         assert isinstance(system_data, System_data)
         system_data_normed = self.norm.transform(system_data)
         u, y = system_data_normed.u, system_data_normed.y
         ufuture, yfuture, upast, ypast = [], [], [], []
-        for i in range(nf+max(self.na, self.nb),len(u)+1):
+        for i in range(nf+max(self.na, self.nb),len(u)+1, stride):
             ufuture.append(u[i-nf:i])
             yfuture.append(y[i-nf:i])
             upast.append(u[i-nf-self.nb:i-nf])
@@ -102,7 +103,7 @@ class Meta_SS_model_encoder(Meta_SS_model):
         as_tensor = lambda x: [torch.as_tensor(np.array(xi), dtype=torch.float32) for xi in x]
         return as_tensor([upast, ypast, ufuture, yfuture])
     
-    def simulate(self, upast, ypast, ufuture, yfuture, return_z=False):
+    def simulate(self, upast, ypast, ufuture, yfuture, return_z=False, **kwargs):
         Nb = upast.shape[0]
         init_z = self.past_to_meta_state(torch.cat([upast.view(Nb,-1), ypast.view(Nb,-1)],dim=1))
         return super().simulate(ufuture, yfuture, init_z, return_z=return_z)

@@ -49,7 +49,9 @@ class Norm:
     def __repr__(self):
         return f'System_data_norm: (uumeean={self.umean}, ustd={self.ustd}, ymean={self.ymean}, ystd={self.ystd})'
 
-def get_nu_ny_and_auto_norm(u, y):
+def get_nu_ny_and_auto_norm(u, y=None):
+    if isinstance(u, (System_data, System_data_list)):
+        u, y = u.u, u.y
     nu = None if u.ndim==1 else u.shape[1]
     ny = None if y.ndim==1 else y.shape[1]
     norm = Norm(u, y)

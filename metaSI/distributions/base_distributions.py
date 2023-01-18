@@ -133,7 +133,7 @@ class Mixture(Distrubution):
         variance_components = self.dists.variance
         mean_components = self.dists.mean
         weights = self.weights[(...,) +(None,)*len(self.event_shape)]
-        term1 = torch.sum(weights*(variance_components + mean_components**2), dim=-1)
+        term1 = torch.sum(weights*(variance_components + mean_components**2), dim=-1-len(self.event_shape)) 
         return term1 - mean_mixture**2
     
     def __getitem__(self, x): #this does not work for event shapes

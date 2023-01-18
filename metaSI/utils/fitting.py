@@ -14,12 +14,18 @@ class nnModule_with_fit(nn.Module):
     def fit(self, train, val, iterations=10_000, batch_size=256, loss_kwargs={}, \
             print_freq=100, loss_kwargs_val=None, call_back_validation=None, \
             val_freq=None, optimizer=None, save_freq=None, save_filename=None):
-        '''The main fitting function        
+        '''The main fitting function    
+         it uses 
+          - self.make_training_arrays
+          - self.loss
         '''
-        loss_kwargs_val = (loss_kwargs if loss_kwargs_val is None else loss_kwargs_val)
+        loss_kwargs_val = loss_kwargs if loss_kwargs_val is None else loss_kwargs_val
         val_data = self.make_training_arrays(val, **loss_kwargs_val)
         train_data = self.make_training_arrays(train, **loss_kwargs)
+
+        
         print('Number of datapoints:', len(train_data[0]), '\tBatch size: ', batch_size, '\tIterations per epoch:', len(train_data[0])//batch_size)
+        print('Training arrays size:', array_byte_size(train_data), 'Validation arrays size:', array_byte_size(val_data))
         if optimizer is not None:
             self.optimizer = optimizer
         elif not hasattr(self,'optimizer'):
@@ -50,17 +56,15 @@ class nnModule_with_fit(nn.Module):
                 loss_train_acc += loss.item()
                 
                 if iteration%val_freq==0:  #Validation
-                    if call_back_validation is None:
-                        loss_val = self.loss(*val_data, **loss_kwargs_val).item()
-                    else:
-                        loss_val = call_back_validation(locals(), globals())
+                    with torch.no_grad():
+                        loss_val = self.loss(*val_data, **loss_kwargs_val).item() if call_back_validation is None else call_back_validation(locals(), globals())
                     if loss_val<lowest_val_loss_seen:
                         lowest_val_loss_seen = loss_val
                         self.checkpoint_save('lowest_val_loss')
                 if iteration%print_freq==0: #Printing and monitor update
                     loss_train = loss_train_acc/print_freq
                     m = '!' if loss_train<lowest_train_loss_seen else ' '
-                    M = '!' if len(self.loss_val_monitor)==0 or np.min(self.loss_val_monitor)>lowest_val_loss_seen else ' '
+                    M = '!!' if len(self.loss_val_monitor)==0 or np.min(self.loss_val_monitor)>lowest_val_loss_seen else '  '
                     print(f'it {iteration:7,} loss {loss_train:.3f}{m} loss val {loss_val:.3f}{M}')
                     self.loss_train_monitor.append(loss_train)
                     self.loss_val_monitor.append(loss_val)
@@ -147,3 +151,14 @@ class Dataloader_iterationsIterator:
             self.data_counter = 0
             np.random.shuffle(self.ids)
         return [d[ids_now] for d in self.data]
+
+
+def array_byte_size(arrays, name='training'):
+    Dsize = sum([d.detach().numpy().nbytes for d in arrays])
+    if Dsize>2**30: 
+        dstr = f'{Dsize/2**30:.1f} GB'
+    elif Dsize>2**20: 
+        dstr = f'{Dsize/2**20:.1f} MB'
+    else:
+        dstr = f'{Dsize/2**10:.1f} kB'
+    return dstr

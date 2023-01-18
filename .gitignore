@@ -5,3 +5,4 @@ __pycache__/
 /old/
 examples/.ipynb_checkpoints/
 .vscode/
+examples/models/

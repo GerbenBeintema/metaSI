@@ -26,7 +26,7 @@ class Normal(Distrubution):
         return self.loc
     @property
     def variance(self):
-        return self.scale
+        return self.scale**2
     def stack(self, list_of_distributions, dim=0):
         loc = torch.stack([l.loc for l in list_of_distributions], dim=dim)
         scale = torch.stack([l.scale for l in list_of_distributions], dim=dim)
