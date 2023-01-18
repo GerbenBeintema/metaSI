@@ -42,17 +42,19 @@ class Multivariate_Normal(Distrubution):
     def __add__(self, other):
         assert not isinstance(other, Distrubution)
         return Multivariate_Normal(loc=self.loc + torch.as_tensor(other,dtype=torch.float), scale_tril=self.scale_tril)
-    def __mul__(self, other):
+    def __mul__(self, other): #other casts to self.batch_shape + self.event_shape
         assert not isinstance(other, Distrubution)
         if not isinstance(other, torch.Tensor):
             other = torch.as_tensor(other, dtype=torch.float)
-        if other.ndim < 2:
-            other = torch.eye(self.event_shape[0])*other
-        return Multivariate_Normal(loc=self.loc@other, scale_tril=self.scale_tril@other)
-    def __rmatmul__(self, other):
-        LTA = self.scale_tril.T@other
-        scale_tril = torch.linalg.cholesky(LTA.T@LTA) #might not be correct?
-        return Multivariate_Normal(loc=self.loc@other, scale_tril=scale_tril)
+        loc = self.loc * other
+        scale_tril = torch.einsum('...ij,...j->...ij',self.scale_tril,other)
+        return Multivariate_Normal(loc=loc, scale_tril=scale_tril)
+    def __matmul__(self, other):
+        LTA = torch.einsum('...ji,...jk->...ik', self.scale_tril, other)
+        SIGMA = torch.einsum('...ji,...jk->...ik', LTA, LTA)
+        scale_tril = torch.linalg.cholesky(SIGMA) #might not be correct?
+        loc = torch.einsum('...i,...ik->...k', self.loc, other)
+        return Multivariate_Normal(loc=loc, scale_tril=scale_tril)
     def __getitem__(self, x): 
         return Multivariate_Normal(self.loc[x], self.scale_tril[x])
 
@@ -67,21 +69,6 @@ class Multivariate_Normal(Distrubution):
         loc = torch.stack([l.loc for l in list_of_distributions], dim=dim)
         scale_tril = torch.stack([l.scale_tril for l in list_of_distributions], dim=dim)
         return Multivariate_Normal(loc, scale_tril)
-
-    def __matmul__(self, other): #self@other
-        assert not isinstance(other, Distrubution)
-        loc = self.loc@other
-        scale_tril = self.loc@other
-        #Sigma = LL^T
-        #Sigma' = ALL^TA^T
-        mat = other@self.scale_tril
-        Sigma_new = torch.einsum('...ij,...kj', mat, mat)
-        scale_tril = torch.linalg.cholesky(Sigma_new)
-        return Multivariate_Normal(loc, scale_tril)
-    def __rmatmul__(self, other): #other@self
-        assert not isinstance(other, Distrubution)
-        assert False
-        return self.__class__(other@self.dists, self.weights, self.log_weights)
 
 
 def Mixture_normals(locs, scales, weights=None, log_weights=None):

@@ -145,15 +145,19 @@ class Mixture(Distrubution):
         return self.__class__(dists, weights, log_weights)
     
     ### Transforms ###
-    def __add__(self, other):
+    def __add__(self, other): #other has a shape which casts to [batch_shape] + [event_shape] and is probably torch
+        other = torch.unsqueeze(torch.broadcast_to(torch.as_tensor(other), self.batch_shape + self.event_shape), dim=-1-len(self.event_shape))
         assert not isinstance(other, Distrubution)
         return self.__class__(self.dists + other, self.weights, self.log_weights)
     def __mul__(self, other):
+        other = torch.unsqueeze(torch.broadcast_to(torch.as_tensor(other), self.batch_shape + self.event_shape), dim=-1-len(self.event_shape))
         assert not isinstance(other, Distrubution)
         return self.__class__(self.dists*other, self.weights, self.log_weights)
     def __matmul__(self, other): #self@other
+        other = torch.unsqueeze(torch.broadcast_to(torch.as_tensor(other), self.batch_shape + (self.event_shape[0],self.event_shape[0])), dim=-1-2*len(self.event_shape))
         assert not isinstance(other, Distrubution)
         return self.__class__(self.dists@other, self.weights, self.log_weights)
     def __rmatmul__(self, other): #other@self
+        other = torch.unsqueeze(torch.broadcast_to(torch.as_tensor(other), self.batch_shape + (self.event_shape[0],self.event_shape[0])), dim=-1-2*len(self.event_shape))
         assert not isinstance(other, Distrubution)
         return self.__class__(other@self.dists, self.weights, self.log_weights)
