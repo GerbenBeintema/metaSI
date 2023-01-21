@@ -48,7 +48,6 @@ class Multi_step_result:
         dim = self.get_dim(batch_average, time_average, output_average=False)
         return torch.mean(logp, dim=dim).detach().numpy() #div ny? /self.ny_val + + 1.4189385332046727417803297364056176
         #I can also remove the entropy thing, but that is overkill. 
-    @property
     def __len__(self):
         '''The total number of samples i.e. Nb*Nt'''
         return self.yfuture.shape[0]*self.yfuture.shape[1]

@@ -62,7 +62,7 @@ class Multivariate_Normal(Distrubution):
     def mean(self):
         return self.loc
     @property
-    def variance(self):
+    def variance(self): #this does not work
         return self.scale_tril@self.scale_tril.T
 
     def stack(self, list_of_distributions, dim=0):
