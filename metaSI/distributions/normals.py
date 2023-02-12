@@ -18,7 +18,7 @@ class Normal(Distrubution):
         return Normal(loc=self.loc + other, scale=self.scale)
     def __mul__(self, other):
         assert not isinstance(other, Distrubution)
-        return Normal(loc=self.loc*other, scale=self.scale*other)
+        return Normal(loc=self.loc*other, scale=self.scale*abs(other))
     def __getitem__(self, x): 
         return Normal(self.loc[x], self.scale[x])
     @property

@@ -42,13 +42,13 @@ class Multi_step_result:
     def normalized_log_prob(self, batch_average=True, time_average=True, output_average=True): #check this function against manual norm
         #how much better is 
         assert output_average==True, 'One cannot view the outputs as seperate'
-        y_dists = self.norm.input_transform(self.y_dists)
-        yfuture = self.norm.input_transform(self.yfuture)
+        y_dists = self.norm.output_transform(self.y_dists)
+        yfuture = self.norm.output_transform(self.yfuture)
         logp = y_dists.log_prob(yfuture)
         dim = self.get_dim(batch_average, time_average, output_average=False)
         return torch.mean(logp, dim=dim).detach().numpy() #div ny? /self.ny_val + + 1.4189385332046727417803297364056176
         #I can also remove the entropy thing, but that is overkill. 
-    def __len__(self):
+    def __len__(self) -> int:
         '''The total number of samples i.e. Nb*Nt'''
         return self.yfuture.shape[0]*self.yfuture.shape[1]
     def __repr__(self) -> str:
@@ -59,12 +59,13 @@ class Multi_step_result_list(Multi_step_result):
         self.lst = lst
         for result in lst:
             assert isinstance(result, Multi_step_result)
-    def log_prob(self, batch_average=True, time_average=True, output_average=True):
+    def log_prob(self, batch_average=True, time_average=True, output_average=True) :
         warn('log_prob is still a work in progress for Multi_step_result_list', stacklevel=2)
-        return sum(ls.log_prob(batch_average, time_average, output_average)*len(ls) for ls in self.lst)/self.total_samples()
-    def __len__(self):
+        return sum(l.log_prob(batch_average, time_average, output_average)*len(l) for l in self.lst)/self.total_samples()
+    def __len__(self) -> int:
         return len(self.lst)
-    def total_samples(self):
+    def total_samples(self) -> int:
         return sum(len(ls) for ls in self.lst)
-    
+    def __repr__(self) -> str:
+        return f'Multi_step_result_list of lenght {len(self.lst)} of\n   ' + '\n   '.join([str(l) for l in self.lst])
 
