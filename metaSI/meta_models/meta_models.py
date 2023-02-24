@@ -28,7 +28,7 @@ class Meta_SS_model(nnModule_with_fit):
         self.meta_state_to_output_dist = meta_state_to_output_dist_net(nz, ny, norm=Norm(), \
                                   **meta_state_to_output_dist_kwargs) #no norm here?
 
-    def make_training_arrays(self, system_data, nf=50, parameter_init=False, return_init_z=True,  stride=1, **kwargs):
+    def make_training_arrays(self, system_data, nf=50, parameter_init=False, return_init_z=True,  stride=1):
         if isinstance(system_data, System_data_list):
             assert parameter_init==False, 'Using multiple datasets in the case of a parameterized start does not work yet'
             ufuture, yfuture = cat_torch_arrays([self.make_training_arrays(sd, nf=nf, parameter_init=parameter_init,return_init_z=return_init_z,strid=stride)  for sd in system_data])
@@ -45,7 +45,7 @@ class Meta_SS_model(nnModule_with_fit):
         self.init_z = nn.Parameter(torch.randn((len(ufuture), self.nz))) if parameter_init else torch.zeros((len(ufuture), self.nz))
         return (ufuture, yfuture, self.init_z) if return_init_z else (ufuture, yfuture)
     
-    def simulate(self, ufuture, yfuture, init_z, return_z=False, **kwargs):
+    def simulate(self, ufuture, yfuture, init_z, return_z=False):
         zt = init_z
         ydist_preds = []
         ufuture = ufuture[:,:,None] if self.nu is None else ufuture
@@ -59,7 +59,7 @@ class Meta_SS_model(nnModule_with_fit):
         ydist_preds = stack_distributions(ydist_preds,dim=1) #size is (Nbatch, )
         return (ydist_preds, torch.stack(zvecs,dim=1)) if return_z else ydist_preds
 
-    def loss(self, u, y, init_z, burn_time=0, **kwargs):
+    def loss(self, u, y, init_z, burn_time=0, nf=50, parameter_init=False, stride=1):
         ydist_preds = self.simulate(u, y, init_z)
         return torch.mean(-ydist_preds[:,burn_time:].log_prob(y[:,burn_time:]))/self.ny_val + - 1.4189385332046727417803297364056176
 
@@ -103,11 +103,11 @@ class Meta_SS_model_encoder(Meta_SS_model):
         as_tensor = lambda x: [torch.as_tensor(np.array(xi), dtype=torch.float32) for xi in x]
         return as_tensor([upast, ypast, ufuture, yfuture])
     
-    def simulate(self, upast, ypast, ufuture, yfuture, return_z=False, **kwargs):
+    def simulate(self, upast, ypast, ufuture, yfuture, return_z=False):
         Nb = upast.shape[0]
         init_z = self.past_to_meta_state(torch.cat([upast.view(Nb,-1), ypast.view(Nb,-1)],dim=1))
         return super().simulate(ufuture, yfuture, init_z, return_z=return_z)
-    def loss(self, upast, ypast, ufuture, yfuture, burn_time=0, **kwargs):
+    def loss(self, upast, ypast, ufuture, yfuture, burn_time=0, nf=50, stride=1):
         ydist_preds = self.simulate(upast, ypast, ufuture, yfuture)
         return torch.mean(-ydist_preds[:,burn_time:].log_prob(yfuture[:,burn_time:]))/self.ny_val + - 1.4189385332046727417803297364056176
     def multi_step(self, system_data, nf=100):
@@ -142,10 +142,11 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
                 past_to_meta_state_kwargs=past_to_meta_state_kwargs)
         ny_val = 1 if ny is None else ny
         self.measure_update = measure_update_net(n_in=ny_val+nz, n_out=nz, **measure_update_kwargs)
-    def loss(self, upast, ypast, ufuture, yfuture, filter_p = 1, **kwargs):
-        ydist_preds = self.filter(upast, ypast, ufuture, yfuture, filter_p=filter_p)
+    def loss(self, upast, ypast, ufuture, yfuture, output_filter_p = 1, nf=50, stride=1):
+        ydist_preds = self.filter(upast, ypast, ufuture, yfuture, output_filter_p=output_filter_p)
         return torch.mean(-ydist_preds.log_prob(yfuture))/self.ny_val + - 1.4189385332046727417803297364056176
-    def filter(self, upast, ypast, ufuture, yfuture, filter_p = 1, return_z=False, sample_filter_p = 0): #a bit of duplicate code but it's fine. 
+    def filter(self, upast, ypast, ufuture, yfuture, output_filter_p = 1, return_z=False, sample_filter_p = 0): #a bit of duplicate code but it's fine. 
+        assert output_filter_p + sample_filter_p <= 1 and output_filter_p>=0 and sample_filter_p>=0
         Nb = upast.shape[0]
         zt = self.past_to_meta_state(torch.cat([upast.view(Nb,-1), ypast.view(Nb,-1)],dim=1))
         ydist_preds = []
@@ -156,19 +157,23 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
             ydist_pred = self.meta_state_to_output_dist.get_dist_normed(zt)
             ydist_preds.append(ydist_pred)
             zvecs.append(zt)
-            if random.random()<filter_p: #filter using output
-                ysamp = ydist_pred.sample() if random.random()<sample_filter_p else yt
+            r = random.random()
+            if r<=output_filter_p + sample_filter_p: #should filter
+                if r<=output_filter_p: #output filter
+                    ysamp = yt
+                else: #sample filter
+                    ysamp = ydist_pred.sample()[:,None] if self.ny is None else ydist_pred.sample()
                 zy = torch.cat([zt, ysamp], dim=1)
                 zm = self.measure_update(zy)
-            else: #skip filter step and recover old implementation
+            else:
                 zm = zt
             zu = torch.cat([zm, ut], dim=1)
             zt = self.meta_state_advance(zu)
         ydist_preds = stack_distributions(ydist_preds,dim=1) #size is (Nbatch, )
         return (ydist_preds, torch.stack(zvecs,dim=1)) if return_z else ydist_preds
-    def multi_step(self, system_data, nf=100, filter_p = 1, sample_filter_p = 0):
+    def multi_step(self, system_data, nf=100, output_filter_p = 1, sample_filter_p = 0):
         if isinstance(system_data, System_data_list):
-            res = [self.multi_step(system_data_i, nf=nf, filter_p=filter_p, sample_filter_p=sample_filter_p) for system_data_i in system_data]
+            res = [self.multi_step(system_data_i, nf=nf, output_filter_p=output_filter_p, sample_filter_p=sample_filter_p) for system_data_i in system_data]
             return Multi_step_result_list(res)
         assert isinstance(system_data, System_data)
         if nf=='sim':
@@ -176,7 +181,7 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
         upast, ypast, ufuture, yfuture = self.make_training_arrays(system_data, nf=nf)
         with torch.no_grad():
             y_dists, zfuture = self.filter(upast, ypast, ufuture, yfuture, return_z=True, \
-                filter_p=filter_p, sample_filter_p=sample_filter_p)
+                output_filter_p=output_filter_p, sample_filter_p=sample_filter_p)
         I = self.norm.input_inverse_transform
         O = self.norm.output_inverse_transform
         test_norm = Norm(system_data.u, system_data.y)

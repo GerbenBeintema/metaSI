@@ -36,7 +36,8 @@ class nnModule_with_fit(nn.Module):
             self.loss_train_monitor, self.loss_val_monitor, self.iteration_monitor = [], [], []
             iteration_counter_offset = 0
         else:
-            print('Restarting training!!!, this might result in weird behaviour')
+            print('*** Restarting training!!!, this might result in weird behaviour')
+            self._check_and_refresh_optimizer_if_needed() #
             iteration_counter_offset = self.iteration_monitor[-1] if len(self.iteration_monitor)>0 else 0
         lowest_train_loss_seen, loss_train_acc, _ = float('inf'), 0, self.checkpoint_save('lowest_train_loss')
         lowest_val_loss_seen, loss_val, _ = float('inf'), float('inf'), self.checkpoint_save('lowest_val_loss')
@@ -49,10 +50,12 @@ class nnModule_with_fit(nn.Module):
         data_iter = enumerate(tqdm(Dataloader_iterations(train_data, batch_size=batch_size, iterations=iterations), initial=1),start=1)
         try:
             for iteration, batch in data_iter:
-                loss = self.loss(*batch,**loss_kwargs)
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
+                def closure():
+                    loss = self.loss(*batch,**loss_kwargs)
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    return loss
+                loss = self.optimizer.step(closure)
                 loss_train_acc += loss.item()
                 
                 if iteration%val_freq==0:  #Validation
@@ -92,6 +95,19 @@ class nnModule_with_fit(nn.Module):
         self.optimizer.load_state_dict(self.checkpoints[name]['optimizer_state_dict'])
     def save_to_file(self, file):
         torch.save(self, file)
+    
+    def _check_and_refresh_optimizer_if_needed(self):
+        if hasattr(self.optimizer, '_cuda_graph_capture_health_check'): 
+            try:
+                self.optimizer._cuda_graph_capture_health_check()
+            except AttributeError:
+                print('*** Refreshing optimizer with _refresh_optimizer (probably due to a restart of training after loading the model from a file)')
+                self._refresh_optimizer()
+
+    def _refresh_optimizer(self):
+        optimizer = self.optimizer.__class__(self.parameters(), **self.optimizer.defaults)
+        optimizer.load_state_dict(self.optimizer.state_dict())
+        self.optimizer = optimizer
 
 def get_checkpoint_dir():
     '''A utility function which gets the checkpoint directory for each OS

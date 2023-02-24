@@ -31,6 +31,16 @@ class Normal(Distrubution):
         loc = torch.stack([l.loc for l in list_of_distributions], dim=dim)
         scale = torch.stack([l.scale for l in list_of_distributions], dim=dim)
         return Normal(loc, scale)
+    def log_integrate_multiply(self, other):
+        assert isinstance(other, Normal)
+        # int N(x| mu_1, sigma_1)*N(x| mu_2, sigma_2) dx = 
+        # exp( - (mu_1 - mu_2)^2/ (2*(sigma_1^2 + sigma_2^2)) / (sqrt(2pi)* sqrt(sigma_1^2 + sigma_2^2))
+        # log:
+        # - 0.5*(mu_1 - mu_2)^2/(sigma_1^2 + sigma_2^2) - 0.5*log(2 pi) - 0.5*log(sigma_1^2 + sigma_2^2)
+        mu_1, sigma_1 = self.loc, self.scale
+        mu_2, sigma_2 = other.loc, other.scale
+        sigma_12pow2 = sigma_1**2 + sigma_2**2
+        return -0.5*(mu_1 - mu_2)**2/sigma_12pow2 - np.log(2*torch.pi)*0.5 - torch.log(sigma_12pow2)*0.5
 
 class Multivariate_Normal(Distrubution):
     def __init__(self, loc, scale_tril):
@@ -69,6 +79,42 @@ class Multivariate_Normal(Distrubution):
         loc = torch.stack([l.loc for l in list_of_distributions], dim=dim)
         scale_tril = torch.stack([l.scale_tril for l in list_of_distributions], dim=dim)
         return Multivariate_Normal(loc, scale_tril)
+
+    def log_integrate_multiply(self, other):
+        assert isinstance(other, Multivariate_Normal)
+        # int N(x| mu_1, Sigma_1)*N(x| mu_2, Sigma_2) dx
+        # defs:
+        # Sigma_S^-1 = Sigma_1^-1 + Sigma_2^-1
+        # mu_s = Sigma_S*(Sigma_1^-1 mu_1 + Sigma_2^-1 mu_2)
+        # 
+        # sol:
+        # exp(c) |Sigma_s|^1/2/((2*pi)^(n_x/2) | Sigma_1|^1/2 |Sigma_2|^1/2)
+        # c = -0.5*mu_1^T Sigma_1^-1 mu_1 -0.5*mu_2^T Sigma_2^-1 mu_2 
+        #     +0.5*mu_s^T Sigma_s^-1 mu_s
+
+
+        # log result:
+        # c + logdet(Sigma_s)*0.5 - log(2pi)*(n_x/2) - logdet(Sigma_1)*0.5 - logdet(Sigma_1)*0.5
+        # c - logdet(Sigma_s_inv)*0.5 - log(2pi)*(n_x/2) - logdet(Sigma_1)*0.5 - logdet(Sigma_1)*0.5
+
+        #this can be simplified a lot if Sigma is a diagonal matrix
+        Sigma_1 = self.dist.covariance_matrix #batch_shape + (ny, ny)
+        Sigma_1_inv = self.dist.precision_matrix #batch_shape + (ny, ny)
+        Sigma_2 = other.dist.covariance_matrix #batch_shape + (ny, ny)
+        Sigma_2_inv = other.dist.precision_matrix #batch_shape + (ny, ny)
+        mu_1 = self.dist.loc #batch_shape + ny
+        mu_2 = other.dist.loc ##batch_shape + ny
+
+        matvecmul = lambda mat, vec: torch.einsum('...ij,...j', mat, vec)
+        vecmatvecmul = lambda vec1, mat, vec2: torch.einsum('...j,...ji,...i', vec1, mat, vec2)
+
+        Sigma_s_inv = Sigma_1_inv + Sigma_2_inv
+        Sigma_s = torch.linalg.inv(Sigma_s_inv)
+        mu_s = matvecmul(Sigma_s,matvecmul(Sigma_1_inv, mu_1) + matvecmul(Sigma_2_inv, mu_2))
+
+        c = 0.5*( - vecmatvecmul(mu_1, Sigma_1_inv, mu_1) - vecmatvecmul(mu_2, Sigma_2_inv, mu_2) +  vecmatvecmul(mu_s, Sigma_s_inv, mu_s))
+        return c - torch.logdet(Sigma_s_inv)*0.5 - torch.logdet(Sigma_1)*0.5 \
+            - torch.logdet(Sigma_2)*0.5 - np.log(2*np.pi)*mu_1.shape[-1]*0.5
 
 
 def Mixture_normals(locs, scales, weights=None, log_weights=None):

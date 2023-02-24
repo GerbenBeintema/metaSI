@@ -139,9 +139,10 @@ class Mixture(Distrubution):
     def __getitem__(self, x): #this does not work for event shapes
         #this might not work entirely correctly
         x = x  if isinstance(x, tuple) else (x,)
-        dists = self.dists[x+(...,slice(None,None,None))]
-        weights = self.weights[x+(...,slice(None,None,None))]
-        log_weights = self.log_weights[x+(...,slice(None,None,None))]
+        S = slice(None,None,None)
+        dists = self.dists[x+(...,S)]
+        weights = self.weights[x+(...,S)]
+        log_weights = self.log_weights[x+(...,S)]
         return self.__class__(dists, weights, log_weights)
     
     ### Transforms ###
@@ -161,6 +162,18 @@ class Mixture(Distrubution):
         other = torch.unsqueeze(torch.broadcast_to(torch.as_tensor(other), self.batch_shape + (self.event_shape[0],self.event_shape[0])), dim=-1-2*len(self.event_shape))
         assert not isinstance(other, Distrubution)
         return self.__class__(other@self.dists, self.weights, self.log_weights)
+
+    def log_integrate_multiply(self, other):
+        assert isinstance(other, Mixture)
+        dists_1 = self.dists[..., None] # batch_shape + (n_components, 1)
+        dists_2 = self.dists[..., None, :] # batch_shape + (1, n_components)
+        logw1 = self.log_weights[..., None] # batch_shape + (n_components, 1)
+        logw2 = other.log_weights[..., None, :] # batch_shape + (1, n_components)
+
+        gij = dists_1.log_integrate_multiply(dists_2) # batch_shape + (n_components, n_components)
+        comb = (logw1 + logw2 + gij).flatten(start_dim=len(self.batch_shape))# batch_shape + (n_components * n_components)
+        max_comb = comb.max(dim=-1,keepdim=True).values # batch_shape + (1,)
+        return max_comb[...,0] + torch.log(torch.sum(torch.exp(comb-max_comb),dim=-1))
 
 class Crossed_distribution(Distrubution):
     def __init__(self, *list_of_distributions) -> None:
