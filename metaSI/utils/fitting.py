@@ -13,7 +13,8 @@ from tqdm.auto import tqdm
 class nnModule_with_fit(nn.Module):
     def fit(self, train, val, iterations=10_000, batch_size=256, loss_kwargs={}, \
             print_freq=100, loss_kwargs_val=None, call_back_validation=None, \
-            val_freq=None, optimizer=None, save_freq=None, save_filename=None):
+            val_freq=None, optimizer=None, save_freq=None, save_filename=None,\
+            scheduler=None, schedule_freq=1, schedular_input_fun=None):
         '''The main fitting function    
          it uses 
           - self.make_training_arrays
@@ -26,6 +27,10 @@ class nnModule_with_fit(nn.Module):
         
         print('Number of datapoints:', len(train_data[0]), '\tBatch size: ', batch_size, '\tIterations per epoch:', len(train_data[0])//batch_size)
         print('Training arrays size:', array_byte_size(train_data), 'Validation arrays size:', array_byte_size(val_data))
+        if scheduler is not None:
+            if schedular_input_fun is None:
+                schedular_input_fun = lambda locs, globs: {}
+            assert optimizer is not None, 'If scheduler is defined you need to explictly make the optimizer yourself'
         if optimizer is not None:
             self.optimizer = optimizer
         elif not hasattr(self,'optimizer'):
@@ -64,6 +69,8 @@ class nnModule_with_fit(nn.Module):
                     if loss_val<lowest_val_loss_seen:
                         lowest_val_loss_seen = loss_val
                         self.checkpoint_save('lowest_val_loss')
+                if scheduler is not None and iteration%schedule_freq==0:
+                    scheduler.step(**schedular_input_fun(locals(), globals()))
                 if iteration%print_freq==0: #Printing and monitor update
                     loss_train = loss_train_acc/print_freq
                     m = '!' if loss_train<lowest_train_loss_seen else ' '
@@ -124,6 +131,7 @@ def get_checkpoint_dir():
     def mkdir(directory):
         if os.path.isdir(directory) is False:
             os.mkdir(directory)
+    
     from sys import platform
     if platform == "darwin": #not tested but here it goes
         checkpoints_dir = os.path.expanduser('~/Library/Application Support/meta-SS-checkpoints/')
@@ -169,7 +177,7 @@ class Dataloader_iterationsIterator:
         return [d[ids_now] for d in self.data]
 
 
-def array_byte_size(arrays, name='training'):
+def array_byte_size(arrays):
     Dsize = sum([d.detach().numpy().nbytes for d in arrays])
     if Dsize>2**30: 
         dstr = f'{Dsize/2**30:.1f} GB'
