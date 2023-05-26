@@ -30,7 +30,7 @@ class nnModule_with_fit(nn.Module):
         if scheduler is not None:
             if schedular_input_fun is None:
                 schedular_input_fun = lambda locs, globs: {}
-            assert optimizer is not None, 'If scheduler is defined you need to explictly make the optimizer yourself'
+            assert optimizer is not None, 'If scheduler is given you need to explictly make the optimizer yourself'
         if optimizer is not None:
             self.optimizer = optimizer
         elif not hasattr(self,'optimizer'):
@@ -41,8 +41,8 @@ class nnModule_with_fit(nn.Module):
             self.loss_train_monitor, self.loss_val_monitor, self.iteration_monitor = [], [], []
             iteration_counter_offset = 0
         else:
-            print('*** Restarting training!!!, this might result in weird behaviour')
-            self._check_and_refresh_optimizer_if_needed() #
+            print('*** Restarting training!!! This might result in weird behaviour ***')
+            self._check_and_refresh_optimizer_if_needed() #for Adam optimizers you need to referesh them when loading from a file
             iteration_counter_offset = self.iteration_monitor[-1] if len(self.iteration_monitor)>0 else 0
         lowest_train_loss_seen, loss_train_acc, _ = float('inf'), 0, self.checkpoint_save('lowest_train_loss')
         lowest_val_loss_seen, loss_val, _ = float('inf'), float('inf'), self.checkpoint_save('lowest_val_loss')
@@ -110,7 +110,6 @@ class nnModule_with_fit(nn.Module):
             except AttributeError:
                 print('*** Refreshing optimizer with _refresh_optimizer (probably due to a restart of training after loading the model from a file)')
                 self._refresh_optimizer()
-
     def _refresh_optimizer(self):
         optimizer = self.optimizer.__class__(self.parameters(), **self.optimizer.defaults)
         optimizer.load_state_dict(self.optimizer.state_dict())

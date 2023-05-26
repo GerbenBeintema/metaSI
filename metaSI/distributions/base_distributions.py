@@ -23,6 +23,8 @@ class Distrubution:
         return torch.exp(self.log_prob(other))
     def log_prob(self, other):
         return self.dist.log_prob(other)
+    def cdf(self, other):
+        return self.dist.cdf(other)
     def sample(self, sample_shape=()):
         if isinstance(sample_shape,int):
             sample_shape = (sample_shape,)
@@ -90,6 +92,13 @@ class Mixture(Distrubution):
         return rmax[..., 0] + torch.log(torch.sum(torch.exp(r-rmax),dim=-1))
     def prob_per_weighted(self, other): #this is not very numerically stable
         return torch.exp(self.log_prob_per_weighted(other))
+    def cdf(self, other):
+        cdf = self.dists.cdf(other[...,None]) 
+        return torch.sum(cdf*self.weights, -1)
+    # def CRPS(self, other, nsamples=100):
+    #     X = self.sample(nsamples) #first dim is the sample dimension
+    #     Xp = self.sample(nsamples) #first dim is the sample dimension
+    #     return torch.abs(X - other[None]).mean(0) - 0.5*torch.abs(X-Xp).mean(0)
 
     def sample(self, sample_shape=()):
         sample_shape = (sample_shape,) if isinstance(sample_shape,int) else sample_shape

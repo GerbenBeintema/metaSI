@@ -2,16 +2,29 @@ import numpy as np
 from matplotlib import pyplot as plt
 import torch
 from torch import distributions
+import math
 
 from metaSI.distributions.base_distributions import Distrubution, stack_distributions, Mixture
 
 class Normal(Distrubution):
-    def __init__(self, loc, scale) -> None:
+    def __init__(self, loc, scale, log_scale=None) -> None:
         assert loc.shape==scale.shape
         self.loc = loc
         self.scale = scale
+        if log_scale==None:
+            log_scale = torch.log(scale)
+        self.log_scale = log_scale
         self.dist = distributions.normal.Normal(loc, scale)
-    
+    def log_prob(self, other):
+        return -((other - self.loc) ** 2) / (2 * self.scale ** 2) - self.log_scale - math.log(math.sqrt(2 * math.pi))
+    # def log_prob(self, other):
+    #     if self._validate_args:
+    #         self._validate_sample(value)
+    #     # compute the variance
+    #     var = (self.scale ** 2)
+    #     log_scale = math.log(self.scale) if isinstance(self.scale, Real) else self.scale.log()
+    #     return -((value - self.loc) ** 2) / (2 * var) - log_scale - math.log(math.sqrt(2 * math.pi))
+
     ### Transforms ###
     def __add__(self, other):
         assert not isinstance(other, Distrubution)
@@ -117,8 +130,8 @@ class Multivariate_Normal(Distrubution):
             - torch.logdet(Sigma_2)*0.5 - np.log(2*np.pi)*mu_1.shape[-1]*0.5
 
 
-def Mixture_normals(locs, scales, weights=None, log_weights=None):
-    dists = Normal(locs, scales)
+def Mixture_normals(locs, scales, weights=None, log_weights=None, log_scale=None):
+    dists = Normal(locs, scales, log_scale)
     return Mixture(dists, weights, log_weights)
 
 def Mixture_multivariate_normals(locs, scale_trils, weights=None, log_weights=None):

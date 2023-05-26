@@ -50,9 +50,11 @@ class Gaussian_mixture_network(nnModule_with_fit):
         logw = logwminmax - torch.log(torch.sum(torch.exp(logwminmax),dim=-1)[...,None])
         
         locs = self.loc_net(z) #output is (Nb, n_components)
-        scale = torch.exp(self.logscale_net(z)) #output is (Nb, n_components)
+        log_scale = self.logscale_net(z)
+        scale = torch.exp(log_scale) #output is (Nb, n_components)
         if self.ny is None:
-            dist = Mixture_normals(locs, scale, log_weights=logw)
+            # dist = Mixture_normals(locs, scale, log_weights=logw)
+            dist = Mixture_normals(locs, scale, log_weights=logw, log_scale=log_scale)
         else:
             locs = locs.view(locs.shape[0], self.n_components, self.ny)       #(Nb, n_components, ny)
             scale = scale.view(scale.shape[0], self.n_components, self.ny) #(Nb, n_components, ny)

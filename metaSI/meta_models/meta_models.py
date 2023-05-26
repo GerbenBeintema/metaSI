@@ -142,10 +142,11 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
                 past_to_meta_state_kwargs=past_to_meta_state_kwargs)
         ny_val = 1 if ny is None else ny
         self.measure_update = measure_update_net(n_in=ny_val+nz, n_out=nz, **measure_update_kwargs)
-    def loss(self, upast, ypast, ufuture, yfuture, output_filter_p = 1, nf=50, stride=1):
-        ydist_preds = self.filter(upast, ypast, ufuture, yfuture, output_filter_p=output_filter_p)
-        return torch.mean(-ydist_preds.log_prob(yfuture))/self.ny_val + - 1.4189385332046727417803297364056176
-    def filter(self, upast, ypast, ufuture, yfuture, output_filter_p = 1, return_z=False, sample_filter_p = 0): #a bit of duplicate code but it's fine. 
+    def loss(self, upast, ypast, ufuture, yfuture, output_filter_p = 1, nf=50, stride=1, clip_loss=None):
+        ydist_preds = self.filter(upast, ypast, ufuture, yfuture, output_filter_p=output_filter_p) #(Nbatch, Ntime)
+        losses = torch.mean(-ydist_preds.log_prob(yfuture), dim=1)/self.ny_val + - 1.4189385332046727417803297364056176
+        return torch.mean(losses) if clip_loss is None else torch.mean(torch.clamp(losses, float('-inf'), clip_loss))
+    def filter(self, upast, ypast, ufuture, yfuture, output_filter_p = 1, return_z=False, sample_filter_p = 0, output_noise_rescale=None): #a bit of duplicate code but it's fine. 
         assert output_filter_p + sample_filter_p <= 1 and output_filter_p>=0 and sample_filter_p>=0
         Nb = upast.shape[0]
         zt = self.past_to_meta_state(torch.cat([upast.view(Nb,-1), ypast.view(Nb,-1)],dim=1))
@@ -162,6 +163,8 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
                 if r<=output_filter_p: #output filter
                     ysamp = yt
                 else: #sample filter
+                    if output_noise_rescale is not None: #rescale noise amplitude, might help with extrapolation issue.
+                        ydist_pred = (ydist_pred - ydist_pred.mean)/output_noise_rescale + ydist_pred.mean
                     ysamp = ydist_pred.sample()[:,None] if self.ny is None else ydist_pred.sample()
                 zy = torch.cat([zt, ysamp], dim=1)
                 zm = self.measure_update(zy)
@@ -171,7 +174,7 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
             zt = self.meta_state_advance(zu)
         ydist_preds = stack_distributions(ydist_preds,dim=1) #size is (Nbatch, )
         return (ydist_preds, torch.stack(zvecs,dim=1)) if return_z else ydist_preds
-    def multi_step(self, system_data, nf=100, output_filter_p = 1, sample_filter_p = 0):
+    def multi_step(self, system_data, nf=100, output_filter_p = 1, sample_filter_p = 0, output_noise_rescale=None):
         if isinstance(system_data, System_data_list):
             res = [self.multi_step(system_data_i, nf=nf, output_filter_p=output_filter_p, sample_filter_p=sample_filter_p) for system_data_i in system_data]
             return Multi_step_result_list(res)
@@ -181,7 +184,7 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
         upast, ypast, ufuture, yfuture = self.make_training_arrays(system_data, nf=nf)
         with torch.no_grad():
             y_dists, zfuture = self.filter(upast, ypast, ufuture, yfuture, return_z=True, \
-                output_filter_p=output_filter_p, sample_filter_p=sample_filter_p)
+                output_filter_p=output_filter_p, sample_filter_p=sample_filter_p, output_noise_rescale=output_noise_rescale)
         I = self.norm.input_inverse_transform
         O = self.norm.output_inverse_transform
         test_norm = Norm(system_data.u, system_data.y)
