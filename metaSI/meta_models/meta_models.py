@@ -192,5 +192,5 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
             data=system_data, ufuture=I(ufuture), upast=I(upast), ypast=O(ypast), zfuture=zfuture)
 
 def cat_torch_arrays(arrays):
-    # [(x1,x2,y1), (x1,x2,y2)] -> [cat([x1,x2]), cat([x2,x2])]
+    # [(x1,x2,y1), (x1,x2,y2)] -> [cat([x1,x2]), cat([x2,x2]), cat([y1,y2])]
     return [torch.cat(o,dim=0) for o in  zip(*arrays)] 

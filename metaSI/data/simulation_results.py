@@ -59,9 +59,11 @@ class Multi_step_result_list(Multi_step_result):
         self.lst = lst
         for result in lst:
             assert isinstance(result, Multi_step_result)
-    def log_prob(self, batch_average=True, time_average=True, output_average=True) :
-        warn('log_prob is still a work in progress for Multi_step_result_list', stacklevel=2)
-        return sum(l.log_prob(batch_average, time_average, output_average)*len(l) for l in self.lst)/self.total_samples()
+    def log_prob(self, batch_average=True, time_average=True, output_average=True, list_averge=True):
+        if list_averge:
+            return sum(l.log_prob(batch_average, time_average, output_average)*len(l) for l in self.lst)/self.total_samples()
+        else:
+            return [l.log_prob(batch_average, time_average, output_average) for l in self.lst]
     def __len__(self) -> int:
         return len(self.lst)
     def total_samples(self) -> int:
