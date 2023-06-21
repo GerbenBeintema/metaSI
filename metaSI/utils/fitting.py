@@ -25,8 +25,8 @@ class nnModule_with_fit(nn.Module):
         train_data = self.make_training_arrays(train, **loss_kwargs)
 
         
-        print('Number of datapoints:', len(train_data[0]), '\tBatch size: ', batch_size, '\tIterations per epoch:', len(train_data[0])//batch_size)
-        print('Training arrays size:', array_byte_size(train_data), 'Validation arrays size:', array_byte_size(val_data))
+        print(f'Number of datapoints: {len(train_data[0]):,} \tBatch size: {batch_size} \tIterations per epoch: {len(train_data[0])//batch_size}')
+        print(f'Training arrays size: {array_byte_size(train_data)} Validation arrays size: {array_byte_size(val_data)}')
         if scheduler is not None:
             if schedular_input_fun is None:
                 schedular_input_fun = lambda locs, globs: {}

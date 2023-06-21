@@ -6,7 +6,7 @@ with open('requirements.txt') as f:
 packages = [a for a in find_namespace_packages(where='.') if a[:6]=='metaSI']
 
 setup(name = 'metaSI',
-      version = '0.2.6',
+      version = '0.2.7',
       description = 'Identification of meta-state-space models',
       author = 'Gerben I. Beintema',
       author_email = 'g.i.beintema@tue.nl',

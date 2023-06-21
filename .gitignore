@@ -6,3 +6,6 @@ __pycache__/
 examples/.ipynb_checkpoints/
 .vscode/
 examples/models/
+examples/data/
+examples/figures/
+examples/WH-models-nz/

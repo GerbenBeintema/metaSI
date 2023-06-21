@@ -28,7 +28,7 @@ class Meta_SS_model(nnModule_with_fit):
         self.meta_state_to_output_dist = meta_state_to_output_dist_net(nz, ny, norm=Norm(), \
                                   **meta_state_to_output_dist_kwargs) #no norm here?
 
-    def make_training_arrays(self, system_data, nf=50, parameter_init=False, return_init_z=True,  stride=1):
+    def make_training_arrays(self, system_data, nf=50, parameter_init=False, return_init_z=True,  stride=1, burn_time=0):
         if isinstance(system_data, System_data_list):
             assert parameter_init==False, 'Using multiple datasets in the case of a parameterized start does not work yet'
             ufuture, yfuture = cat_torch_arrays([self.make_training_arrays(sd, nf=nf, parameter_init=parameter_init,return_init_z=return_init_z,strid=stride)  for sd in system_data])
@@ -107,9 +107,10 @@ class Meta_SS_model_encoder(Meta_SS_model):
         Nb = upast.shape[0]
         init_z = self.past_to_meta_state(torch.cat([upast.view(Nb,-1), ypast.view(Nb,-1)],dim=1))
         return super().simulate(ufuture, yfuture, init_z, return_z=return_z)
-    def loss(self, upast, ypast, ufuture, yfuture, burn_time=0, nf=50, stride=1):
+    def loss(self, upast, ypast, ufuture, yfuture, nf=50, stride=1, clip_loss=None):
         ydist_preds = self.simulate(upast, ypast, ufuture, yfuture)
-        return torch.mean(-ydist_preds[:,burn_time:].log_prob(yfuture[:,burn_time:]))/self.ny_val + - 1.4189385332046727417803297364056176
+        losses = torch.mean(-ydist_preds.log_prob(yfuture), dim=0)/self.ny_val + - 1.4189385332046727417803297364056176
+        return torch.mean(losses) if clip_loss is None else torch.mean(torch.clamp(losses, min=None, max=clip_loss))
     def multi_step(self, system_data, nf=100):
         if isinstance(system_data, System_data_list):
             return Multi_step_result_list([self.multi_step(system_data_i, nf=nf) for system_data_i in system_data])
@@ -144,8 +145,8 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
         self.measure_update = measure_update_net(n_in=ny_val+nz, n_out=nz, **measure_update_kwargs)
     def loss(self, upast, ypast, ufuture, yfuture, output_filter_p = 1, nf=50, stride=1, clip_loss=None):
         ydist_preds = self.filter(upast, ypast, ufuture, yfuture, output_filter_p=output_filter_p) #(Nbatch, Ntime)
-        losses = torch.mean(-ydist_preds.log_prob(yfuture), dim=1)/self.ny_val + - 1.4189385332046727417803297364056176
-        return torch.mean(losses) if clip_loss is None else torch.mean(torch.clamp(losses, float('-inf'), clip_loss))
+        losses = torch.mean(-ydist_preds.log_prob(yfuture), dim=0)/self.ny_val + - 1.4189385332046727417803297364056176
+        return torch.mean(losses) if clip_loss is None else torch.mean(torch.clamp(losses, torch.ones(())*-torch.inf, clip_loss))
     def filter(self, upast, ypast, ufuture, yfuture, output_filter_p = 1, return_z=False, sample_filter_p = 0, output_noise_rescale=None): #a bit of duplicate code but it's fine. 
         assert output_filter_p + sample_filter_p <= 1 and output_filter_p>=0 and sample_filter_p>=0
         Nb = upast.shape[0]

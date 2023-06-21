@@ -3,6 +3,7 @@ from metaSI.utils.fitting import nnModule_with_fit
 from metaSI.data.norms import Norm
 from metaSI.utils.networks import MLP_res_net
 from metaSI.distributions.normals import Mixture_multivariate_normals, Mixture_normals
+from torch.functional import F
 
 #the target of this file is to get a good way of approximating p_theta (y | z)
 #this is done by writting
@@ -20,7 +21,8 @@ class Gaussian_mixture_network(nnModule_with_fit):
                 weight_net=MLP_res_net, weight_net_kwargs={}, 
                 loc_net=MLP_res_net, loc_net_kwargs={}, 
                 logscale_net=MLP_res_net, logscale_net_kwargs={},
-                logscale_od_net=None, logscale_od_net_kwargs={}):
+                logscale_od_net=None, logscale_od_net_kwargs={},
+                epsilon=1e-7):
         super(Gaussian_mixture_network, self).__init__()
         self.norm = norm
         
@@ -29,6 +31,7 @@ class Gaussian_mixture_network(nnModule_with_fit):
         self.nz_val = 1 if self.nz==None else self.nz
         self.ny_val = 1 if self.ny==None else self.ny
         self.n_components = n_components
+        self.epsilon=epsilon
         
         self.weight_net =   weight_net(self.nz_val, n_components, **weight_net_kwargs)
         self.loc_net =      loc_net(self.nz_val, n_components*self.ny_val, **loc_net_kwargs)
@@ -50,11 +53,10 @@ class Gaussian_mixture_network(nnModule_with_fit):
         logw = logwminmax - torch.log(torch.sum(torch.exp(logwminmax),dim=-1)[...,None])
         
         locs = self.loc_net(z) #output is (Nb, n_components)
-        log_scale = self.logscale_net(z)
-        scale = torch.exp(log_scale) #output is (Nb, n_components)
+        scale = F.softplus(self.logscale_net(z)) + self.epsilon
         if self.ny is None:
             # dist = Mixture_normals(locs, scale, log_weights=logw)
-            dist = Mixture_normals(locs, scale, log_weights=logw, log_scale=log_scale)
+            dist = Mixture_normals(locs, scale, log_weights=logw)
         else:
             locs = locs.view(locs.shape[0], self.n_components, self.ny)       #(Nb, n_components, ny)
             scale = scale.view(scale.shape[0], self.n_components, self.ny) #(Nb, n_components, ny)

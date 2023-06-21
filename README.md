@@ -31,7 +31,7 @@ metaSI is in ongoing development and anyone can contribute to any part of module
 
 ## Contact
 
-Feel free to contact me directly for any question or issues related to demetaSIepSI.
+Feel free to contact me directly for any question or issues related to metaSI.
 
 Main developer: PhD candidate Gerben I. Beintema at the TU/e. Control Systems. g.i.beintema@tue.nl
 
@@ -39,7 +39,7 @@ Main developer: PhD candidate Gerben I. Beintema at the TU/e. Control Systems. g
 
 When citing metaSI please use
 
-> TBD
+> TBA
 
 ## License
 
