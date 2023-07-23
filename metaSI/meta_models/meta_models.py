@@ -78,16 +78,15 @@ class Meta_SS_model(nnModule_with_fit):
         return Multi_step_result(O(yfuture), O(y_dists), test_norm, data=system_data, ufuture=I(ufuture), zfuture=zfuture)
 
 class Meta_SS_model_encoder(Meta_SS_model):
-    def __init__(self, nu: int, ny: int, norm: Norm = Norm(), nz: int=5, na: int=6, nb: int=6,\
+    def __init__(self, nu: int, ny: int, norm: Norm = Norm(), nz: int=5, na: int=6, nb: int=6, na_right:int=0, nb_right:int=0,\
                 meta_state_advance_net = MLP_res_net, meta_state_advance_kwargs = {},\
                 meta_state_to_output_dist_net = Gaussian_mixture_network, meta_state_to_output_dist_kwargs=dict(n_components=10),\
                 past_to_meta_state_net = MLP_res_net, past_to_meta_state_kwargs={}):
         super(Meta_SS_model_encoder, self).__init__(nu, ny, norm, nz, meta_state_advance_net=meta_state_advance_net,\
                 meta_state_advance_kwargs=meta_state_advance_kwargs, meta_state_to_output_dist_net=meta_state_to_output_dist_net,\
                     meta_state_to_output_dist_kwargs=meta_state_to_output_dist_kwargs)
-        self.na = na
-        self.nb = nb
-        self.past_to_meta_state = past_to_meta_state_net(self.nu_val*nb+self.ny_val*na, nz, **past_to_meta_state_kwargs)
+        self.na, self.nb, self.na_right, self.nb_right = na, nb, na_right, nb_right
+        self.past_to_meta_state = past_to_meta_state_net(self.nu_val*(nb+nb_right)+self.ny_val*(na+na_right), nz, **past_to_meta_state_kwargs)
     def make_training_arrays(self, system_data, nf=50, stride=1, **kwargs):
         if isinstance(system_data, System_data_list):
             return cat_torch_arrays([self.make_training_arrays(sd, nf=nf, stride=stride) for sd in system_data])
@@ -95,13 +94,13 @@ class Meta_SS_model_encoder(Meta_SS_model):
         system_data_normed = self.norm.transform(system_data)
         u, y = system_data_normed.u, system_data_normed.y
         ufuture, yfuture, upast, ypast = [], [], [], []
-        for i in range(nf+max(self.na, self.nb),len(u)+1, stride):
+        for i in range(max(nf, self.na_right, self.nb_right)+max(self.na, self.nb),len(u)+1, stride):
             ufuture.append(u[i-nf:i])
             yfuture.append(y[i-nf:i])
-            upast.append(u[i-nf-self.nb:i-nf])
-            ypast.append(y[i-nf-self.na:i-nf]) #here was the error u -> y
-        as_tensor = lambda x: [torch.as_tensor(np.array(xi), dtype=torch.float32) for xi in x]
-        return as_tensor([upast, ypast, ufuture, yfuture])
+            upast.append(u[i-nf-self.nb:i-nf+self.nb_right])
+            ypast.append(y[i-nf-self.na:i-nf+self.na_right]) #here was the error u -> y
+        as_tensor = lambda *x: [torch.as_tensor(np.array(xi), dtype=torch.float32) for xi in x]
+        return as_tensor(upast, ypast, ufuture, yfuture)
     
     def simulate(self, upast, ypast, ufuture, yfuture, return_z=False):
         Nb = upast.shape[0]
@@ -109,8 +108,15 @@ class Meta_SS_model_encoder(Meta_SS_model):
         return super().simulate(ufuture, yfuture, init_z, return_z=return_z)
     def loss(self, upast, ypast, ufuture, yfuture, nf=50, stride=1, clip_loss=None):
         ydist_preds = self.simulate(upast, ypast, ufuture, yfuture)
+        #log(sqrt(2 pi e)) add the mean entropy of a normal distribution.
         losses = torch.mean(-ydist_preds.log_prob(yfuture), dim=0)/self.ny_val + - 1.4189385332046727417803297364056176
-        return torch.mean(losses) if clip_loss is None else torch.mean(torch.clamp(losses, min=None, max=clip_loss))
+        losses = losses[self.na_right:] if self.na_right>0 else losses #this fixes degeneration of the output distribution problem
+        # if clip_loss is not None:
+        #     for i,loss in enumerate(losses,start=self.na_right):
+        #         if loss.item()>clip_loss:
+        #             assert i!=self.na_right, 'clipped after 1 step'
+        #             return (self.loss(upast, ypast, ufuture[:,:i], yfuture[:,:i])*(i-self.na_right) + clip_loss*(len(losses)-(i-self.na_right)))/len(losses)
+        return torch.mean(losses)
     def multi_step(self, system_data, nf=100):
         if isinstance(system_data, System_data_list):
             return Multi_step_result_list([self.multi_step(system_data_i, nf=nf) for system_data_i in system_data])
@@ -132,12 +138,12 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
     z_t+1^m = f^m(z_t+1^t, y_t+1)
     p(y_t| z_t^t) is the output (if z_t^m than it model could be a identity and be oke)
     '''
-    def __init__(self, nu: int, ny: int, norm: Norm = Norm(), nz: int=5, na: int=6, nb: int=6,\
+    def __init__(self, nu: int, ny: int, norm: Norm = Norm(), nz: int=5, na: int=6, nb: int=6, na_right:int=0, nb_right:int=0,\
                 meta_state_advance_net = MLP_res_net, meta_state_advance_kwargs = {},\
                 meta_state_to_output_dist_net = Gaussian_mixture_network, meta_state_to_output_dist_kwargs=dict(n_components=10),\
                 past_to_meta_state_net = MLP_res_net, past_to_meta_state_kwargs={}, 
                 measure_update_net = MLP_res_net, measure_update_kwargs={}):
-        super(Meta_SS_model_measure_encoder, self).__init__(nu, ny, norm, nz, na, nb, meta_state_advance_net=meta_state_advance_net,\
+        super(Meta_SS_model_measure_encoder, self).__init__(nu, ny, norm, nz, na, nb, na_right,nb_right, meta_state_advance_net=meta_state_advance_net,\
                 meta_state_advance_kwargs=meta_state_advance_kwargs, meta_state_to_output_dist_net=meta_state_to_output_dist_net,\
                 meta_state_to_output_dist_kwargs=meta_state_to_output_dist_kwargs, past_to_meta_state_net=past_to_meta_state_net,\
                 past_to_meta_state_kwargs=past_to_meta_state_kwargs)
@@ -146,7 +152,13 @@ class Meta_SS_model_measure_encoder(Meta_SS_model_encoder): #always includes an 
     def loss(self, upast, ypast, ufuture, yfuture, output_filter_p = 1, nf=50, stride=1, clip_loss=None):
         ydist_preds = self.filter(upast, ypast, ufuture, yfuture, output_filter_p=output_filter_p) #(Nbatch, Ntime)
         losses = torch.mean(-ydist_preds.log_prob(yfuture), dim=0)/self.ny_val + - 1.4189385332046727417803297364056176
-        return torch.mean(losses) if clip_loss is None else torch.mean(torch.clamp(losses, torch.ones(())*-torch.inf, clip_loss))
+        losses = losses[self.na_right:] if self.na_right>0 else losses #this fixes degen problems
+        # if clip_loss is not None:
+        #     for i,loss in enumerate(losses,start=self.na_right):
+        #         if loss.item()>clip_loss:
+        #             assert i!=self.na_right, 'clipped after 1 step'
+        #             return (self.loss(upast, ypast, ufuture[:,:i], yfuture[:,:i])*(i-self.na_right) + clip_loss*(len(losses)-(i-self.na_right)))/len(losses)
+        return torch.mean(losses)
     def filter(self, upast, ypast, ufuture, yfuture, output_filter_p = 1, return_z=False, sample_filter_p = 0, output_noise_rescale=None): #a bit of duplicate code but it's fine. 
         assert output_filter_p + sample_filter_p <= 1 and output_filter_p>=0 and sample_filter_p>=0
         Nb = upast.shape[0]

@@ -24,7 +24,6 @@ class nnModule_with_fit(nn.Module):
         val_data = self.make_training_arrays(val, **loss_kwargs_val)
         train_data = self.make_training_arrays(train, **loss_kwargs)
 
-        
         print(f'Number of datapoints: {len(train_data[0]):,} \tBatch size: {batch_size} \tIterations per epoch: {len(train_data[0])//batch_size}')
         print(f'Training arrays size: {array_byte_size(train_data)} Validation arrays size: {array_byte_size(val_data)}')
         if scheduler is not None:
@@ -153,8 +152,10 @@ class Dataloader_iterations:
         return self.iterations
     
 class Dataloader_iterationsIterator:
-    def __init__(self, data, batch_size, iterations):
+    def __init__(self, data, batch_size, iterations, init_shuffle=True):
         self.ids = np.arange(len(data[0]),dtype=int)
+        if init_shuffle:
+            np.random.shuffle(self.ids)
         self.data = data
         self.L = len(data[0])
         self.batch_size = self.L if batch_size>self.L else batch_size            
