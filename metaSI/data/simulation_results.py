@@ -69,5 +69,5 @@ class Multi_step_result_list(Multi_step_result):
     def total_samples(self) -> int:
         return sum(len(ls) for ls in self.lst)
     def __repr__(self) -> str:
-        return f'Multi_step_result_list of lenght {len(self.lst)} of\n   ' + '\n   '.join([str(l) for l in self.lst])
+        return f'Multi_step_result_list of length {len(self.lst)} of\n   ' + '\n   '.join([str(l) for l in self.lst])
 
