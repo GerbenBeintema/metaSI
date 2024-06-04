@@ -225,6 +225,97 @@ def cat_torch_arrays(arrays):
     # [(x1,x2,y1), (x1,x2,y2)] -> [cat([x1,x2]), cat([x2,x2]), cat([y1,y2])]
     return [torch.cat(o,dim=0) for o in  zip(*arrays)] 
 
+
+
+class Meta_SS_model_encoder_V2(nnModule_with_fit):
+    def __init__(self, nu: int, ny: int, norm: Norm = None, nz: int=5, na: int=6, nb: int=6, feedthrough=False, \
+                meta_state_advance_net = MLP_res_net,                     meta_state_advance_kwargs = {},\
+                meta_state_to_output_dist_net = Gaussian_mixture_network, meta_state_to_output_dist_kwargs={},\
+                past_to_meta_state_net = MLP_res_net,                     past_to_meta_state_kwargs={}, vectorized_input=True):
+        super(Meta_SS_model_encoder_V2, self).__init__()
+        self.ny, self.nu = ny, nu
+        self.nz = nz
+        self.na, self.nb = na, nb
+        self.ny_val = 1 if self.ny is None else self.ny
+        self.nu_val = 1 if self.nu is None else self.nu
+        self.feedthrough = feedthrough
+        self.norm = Norm() if norm is None else norm
+        self.vectorized_input = vectorized_input
+        assert vectorized_input, 'inputs like f(z, u) are a work in progress'
+        self.past_to_meta_state = past_to_meta_state_net(self.nu_val*nb+self.ny_val*na, nz, **past_to_meta_state_kwargs)
+        self.meta_state_advance = meta_state_advance_net(n_in=nz + self.nu_val, n_out=nz, \
+                                    **meta_state_advance_kwargs)
+        h_in_dim = nz if feedthrough==False else nz+self.nu_val
+        self.meta_state_to_output_dist = meta_state_to_output_dist_net(h_in_dim, ny, norm=Norm(), \
+                                  **meta_state_to_output_dist_kwargs) #no norm here?
+        
+    def get_training_sample_function(self, system_data, nf=50, **kwargs): #already normalized?
+        u, y = system_data.u, system_data.y
+        k0 = (nf + max(self.na, self.nb))
+        def get_training_sample(k):
+            i = k + k0
+            ufuture = u[i-nf:i].astype(np.float32)#.flat
+            yfuture = y[i-nf:i].astype(np.float32)#.flat
+            upast = u[i-nf-self.nb:i-nf].astype(np.float32)#.flat
+            ypast = y[i-nf-self.na:i-nf].astype(np.float32)#.flat
+            return [upast, ypast, ufuture, yfuture]
+        get_training_sample.length = len(u) + 1 - k0
+        return get_training_sample
+
+    def make_training_arrays(self, system_data, stride=1, preconstruct=True, **kwargs):
+        if isinstance(system_data, System_data_list):
+            datasets = [self.make_training_arrays(sd, stride=stride, preconstruct=preconstruct, **kwargs) for sd in system_data]
+            if preconstruct:
+                return cat_torch_arrays(datasets)
+            else:
+                return ConcatDataset(datasets)
+        assert isinstance(system_data, System_data)
+        system_data_normed = self.norm.transform(system_data)
+        get_training_sample = self.get_training_sample_function(system_data_normed, **kwargs)
+        if preconstruct:
+            arrays = zip(*[get_training_sample(k) for k in range(0, get_training_sample.length, stride)])
+            as_tensor = lambda *x: [torch.as_tensor(np.array(xi), dtype=torch.float32) for xi in x]
+            return as_tensor(*arrays)
+        else:
+            return Get_sample_fun_to_dataset(get_training_sample)
+    
+    def simulate(self, upast, ypast, ufuture, yfuture, return_z=False):
+        Nb = upast.shape[0]
+        zt = self.past_to_meta_state(torch.cat([upast.view(Nb,-1), ypast.view(Nb,-1)],dim=1))
+        ydist_preds = []
+        ufuture = ufuture[:,:,None] if self.nu is None else ufuture
+        zvecs = [] #(Ntime, Nb, nz)
+        for ut, yt in zip(torch.transpose(ufuture,0,1),torch.transpose(yfuture,0,1)):
+            ydist_pred = self.meta_state_to_output_dist.get_dist_normed(zt)
+            ydist_preds.append(ydist_pred)
+            zvecs.append(zt) 
+            zu = torch.cat([zt, ut], dim=1)
+            zt = self.meta_state_advance(zu)
+        ydist_preds = stack_distributions(ydist_preds,dim=1) #size is (Nbatch, nf)
+        return (ydist_preds, torch.stack(zvecs,dim=1)) if return_z else ydist_preds
+    
+    def loss(self, upast, ypast, ufuture, yfuture, nf=50, stride=1, clip_loss=None, preconstruct=False):
+        ydist_preds = self.simulate(upast, ypast, ufuture, yfuture)
+        #log(sqrt(2 pi e)) add the mean entropy of a normal distribution.
+        losses = torch.mean(-ydist_preds.log_prob(yfuture), dim=0)/self.ny_val + - 1.4189385332046727417803297364056176
+        return torch.mean(losses)
+    
+    def multi_step(self, system_data, nf=100):
+        if isinstance(system_data, System_data_list):
+            return Multi_step_result_list([self.multi_step(system_data_i, nf=nf) for system_data_i in system_data])
+        assert isinstance(system_data, System_data)
+        if nf=='sim':
+            nf = len(system_data) - max(self.na, self.nb)
+        upast, ypast, ufuture, yfuture = self.make_training_arrays(system_data, nf=nf)
+        with torch.no_grad():
+            y_dists, zfuture = self.simulate(upast, ypast, ufuture, yfuture, return_z=True)
+        I = self.norm.input_inverse_transform
+        O = self.norm.output_inverse_transform
+        test_norm = Norm(system_data.u, system_data.y)
+        return Multi_step_result(O(yfuture), O(y_dists), test_norm, \
+            data=system_data, ufuture=I(ufuture), upast=I(upast), ypast=O(ypast), zfuture=zfuture)
+
+
 if __name__=='__main__':
     u = np.random.randn(3000,3)
     y = np.random.randn(3000,2)

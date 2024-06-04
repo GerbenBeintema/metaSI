@@ -15,7 +15,8 @@ class nnModule_with_fit(nn.Module):
     def fit(self, train, val, iterations=10_000, batch_size=256, loss_kwargs={}, \
             print_freq=100, loss_kwargs_val=None, call_back_validation=None, \
             val_freq=None, optimizer=None, save_freq=None, save_filename=None,\
-            scheduler=None, schedule_freq=1, schedular_input_fun=None, dataloader_kwargs={}):
+            scheduler=None, schedule_freq=1, schedular_input_fun=None, dataloader_kwargs={},\
+            cuda=False):
         '''The main fitting function    
          it uses 
           - self.make_training_arrays, can either return a tuple of arrays or a torch Dataset
@@ -28,7 +29,7 @@ class nnModule_with_fit(nn.Module):
         val_data = dataset_to_arrays(val_data) if isinstance(val_data, Dataset) else val_data #convert val_data to a tuple of arrays if needed
         train_data = self.make_training_arrays(train, **loss_kwargs)
 
-        ndata = len(train_data) if isinstance(train_data, Dataset) else len(train_data)
+        ndata = len(train_data) if isinstance(train_data, Dataset) else len(train_data[0])
         batch_size = ndata if ndata < batch_size else batch_size #if the batch_size is larger than number of samples
         print(f'Number of datapoints: {ndata:,} \tBatch size: {batch_size} \tIterations per epoch: {ndata//batch_size}')
         if isinstance(train_data, Dataset):
@@ -64,12 +65,13 @@ class nnModule_with_fit(nn.Module):
         if save_filename is None and save_freq!=False:
             code = token_urlsafe(4).replace('_','0').replace('-','a')
             save_filename = os.path.join(get_checkpoint_dir(), f'{self.__class__.__name__}-{code}.pth')
-    
+
+        if cuda: self.cuda() #do I need to move the optimizer as well?
         ### main training loop
         try: ### To allow for KeyboardInterrupt
             for iteration, batch in data_iter:
                 def closure():
-                    loss = self.loss(*batch,**loss_kwargs)
+                    loss = self.loss(*(batch if not cuda else [b.cuda() for b in batch]),**loss_kwargs)
                     self.optimizer.zero_grad()
                     loss.backward()
                     return loss
@@ -78,7 +80,7 @@ class nnModule_with_fit(nn.Module):
                 
                 if iteration%val_freq==0:  #Validation
                     with torch.no_grad():
-                        loss_val = self.loss(*val_data, **loss_kwargs_val).item() if call_back_validation is None else call_back_validation(locals(), globals())
+                        loss_val = self.loss(*(val_data if not cuda else [b.cuda() for b in val_data]), **loss_kwargs_val).item() if call_back_validation is None else call_back_validation(locals(), globals())
                     if loss_val<lowest_val_loss_seen:
                         lowest_val_loss_seen = loss_val
                         self.checkpoint_save('lowest_val_loss')

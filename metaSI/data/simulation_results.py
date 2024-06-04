@@ -53,6 +53,7 @@ class Multi_step_result:
         return self.yfuture.shape[0]*self.yfuture.shape[1]
     def __repr__(self) -> str:
         return f'Multi_step_result of batch_size={self.yfuture.shape[0]} time_size={self.yfuture.shape[1]} output_size={self.ny}'
+    
 
 class Multi_step_result_list(Multi_step_result):
     def __init__(self, lst):
